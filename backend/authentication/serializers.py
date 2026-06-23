@@ -1,0 +1,101 @@
+"""
+Serializers cho module xác thực & phân quyền RainClinic.
+"""
+
+from rest_framework import serializers
+from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
+
+User = get_user_model()
+
+
+class UserSerializer(serializers.ModelSerializer):
+    """Serializer đọc thông tin user (không bao gồm password)."""
+
+    role_display = serializers.CharField(source='get_role_display', read_only=True)
+
+    class Meta:
+        model = User
+        fields = [
+            'id', 'username', 'email', 'full_name', 'phone',
+            'role', 'role_display', 'is_active', 'date_joined',
+        ]
+        read_only_fields = ['id', 'date_joined']
+
+
+class RegisterSerializer(serializers.ModelSerializer):
+    """Serializer đăng ký tài khoản mới."""
+
+    password = serializers.CharField(
+        write_only=True,
+        required=True,
+        validators=[validate_password],
+        style={'input_type': 'password'},
+    )
+    password_confirm = serializers.CharField(
+        write_only=True,
+        required=True,
+        style={'input_type': 'password'},
+    )
+
+    class Meta:
+        model = User
+        fields = [
+            'username', 'email', 'password', 'password_confirm',
+            'full_name', 'phone', 'role',
+        ]
+
+    def validate(self, attrs):
+        if attrs['password'] != attrs['password_confirm']:
+            raise serializers.ValidationError({
+                'password_confirm': 'Mật khẩu xác nhận không khớp.',
+            })
+        return attrs
+
+    def create(self, validated_data):
+        validated_data.pop('password_confirm')
+        password = validated_data.pop('password')
+
+        user = User(**validated_data)
+        user.set_password(password)
+        user.save()
+        return user
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    """Serializer đổi mật khẩu."""
+
+    old_password = serializers.CharField(
+        required=True,
+        style={'input_type': 'password'},
+    )
+    new_password = serializers.CharField(
+        required=True,
+        validators=[validate_password],
+        style={'input_type': 'password'},
+    )
+    new_password_confirm = serializers.CharField(
+        required=True,
+        style={'input_type': 'password'},
+    )
+
+    def validate_old_password(self, value):
+        user = self.context['request'].user
+        if not user.check_password(value):
+            raise serializers.ValidationError('Mật khẩu cũ không đúng.')
+        return value
+
+    def validate(self, attrs):
+        if attrs['new_password'] != attrs['new_password_confirm']:
+            raise serializers.ValidationError({
+                'new_password_confirm': 'Mật khẩu xác nhận không khớp.',
+            })
+        return attrs
+
+
+class UpdateProfileSerializer(serializers.ModelSerializer):
+    """Serializer cập nhật hồ sơ cá nhân."""
+
+    class Meta:
+        model = User
+        fields = ['full_name', 'phone', 'email']

@@ -1,0 +1,6 @@
+{
+  "name": "RainClinic",
+  "description": "A comprehensive smart clinic management system UI featuring authentication, patient booking, and admin management dashboards with interactive preview states.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
