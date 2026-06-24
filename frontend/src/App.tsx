@@ -39,11 +39,10 @@ export default function App() {
       try {
         return JSON.parse(saved);
       } catch {
-        return DEFAULT_USERS[0]; // Jane Doe (Patient)
+        return null;
       }
     }
-    // Default to Patient (Jane Doe) to make it ready-to-test
-    return DEFAULT_USERS[0];
+    return null;
   });
 
   const [services, setServices] = useState<MedicalService[]>(() => {
@@ -78,7 +77,7 @@ export default function App() {
         return u.role === 'admin' ? 'admin' : 'patient';
       } catch {}
     }
-    return 'patient'; // Default tab matching user
+    return 'auth'; // Bắt đầu ở trang đăng nhập/đăng ký nếu chưa đăng nhập
   });
 
   // Toasts notification pipeline
@@ -147,33 +146,12 @@ export default function App() {
   const handleLogout = () => {
     setCurrentUser(null);
     setCurrentTab('auth');
+    localStorage.removeItem('rc_access_token');
+    localStorage.removeItem('rc_refresh_token');
+    localStorage.removeItem('rc_is_admin');
     handleShowToast('Đã đăng xuất khỏi phiên làm việc RainClinic.', 'info');
   };
 
-  // Switch perspective between Jane Doe (Patient) and Arthur Rain (Admin) on-the-fly for review
-  const handleQuickRoleToggle = () => {
-    if (!currentUser) {
-      // If no active user, log in Jane Doe
-      setCurrentUser(DEFAULT_USERS[0]);
-      setCurrentTab('patient');
-      handleShowToast('Giả lập đăng nhập: Jane Doe (Bệnh nhân)', 'success');
-      return;
-    }
-
-    if (currentUser.role === 'patient') {
-      // Swap to default admin
-      const adminUser = DEFAULT_USERS.find((u) => u.role === 'admin') || DEFAULT_USERS[1];
-      setCurrentUser(adminUser);
-      setCurrentTab('admin');
-      handleShowToast('Giả lập chuyển góc nhìn: Arthur Rain (Admin)', 'success');
-    } else {
-      // Swap to default patient
-      const patientUser = DEFAULT_USERS.find((u) => u.role === 'patient') || DEFAULT_USERS[0];
-      setCurrentUser(patientUser);
-      setCurrentTab('patient');
-      handleShowToast('Giả lập chuyển góc nhìn: Jane Doe (Bệnh nhân)', 'success');
-    }
-  };
 
   // APPOINTMENT BOOKING HANDLER
   const handleBookAppointment = (bookingData: {
@@ -248,21 +226,6 @@ export default function App() {
     handleShowToast('Đã xóa ca giờ hoạt động tương ứng khỏi bệnh viện.', 'error');
   };
 
-  // Reset demo databases to initial factory states
-  const handleResetDatabase = () => {
-    if (window.confirm('Bạn có chắc chắn muốn đặt lại cơ sở dữ liệu mẫu về cấu hình RainClinic ban đầu?')) {
-      localStorage.removeItem('rc_services');
-      localStorage.removeItem('rc_timeslots');
-      localStorage.removeItem('rc_appointments');
-      localStorage.removeItem('rc_current_user');
-      setServices(DEFAULT_SERVICES);
-      setTimeSlots(DEFAULT_TIME_SLOTS);
-      setAppointments(DEFAULT_APPOINTMENTS);
-      setCurrentUser(DEFAULT_USERS[0]);
-      setCurrentTab('patient');
-      handleShowToast('Hệ thống dịch vụ dữ liệu RainClinic đã khôi phục mặc định!', 'info');
-    }
-  };
 
   return (
     <div id="app-viewport" className="min-h-screen bg-[#f8fafc] flex flex-col justify-between font-sans">
@@ -274,7 +237,6 @@ export default function App() {
           onChangeTab={setCurrentTab}
           currentUser={currentUser}
           onLogout={handleLogout}
-          onQuickRoleToggle={handleQuickRoleToggle}
         />
   
         {/* Core App Shell */}
@@ -366,15 +328,6 @@ export default function App() {
                     </div>
                     
                     <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
-                       <button
-                        id="btn-elevate-perspective"
-                        type="button"
-                        onClick={handleQuickRoleToggle}
-                        className="px-5 py-2 hover:bg-blue-950 text-white text-xs font-bold bg-blue-900 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
-                      >
-                        <Sparkles className="w-3.5 h-3.5 text-white" />
-                        <span>Chuyển Vai Trò Giả Lập</span>
-                      </button>
                       <button
                         id="btn-goto-auth-admin"
                         type="button"
@@ -419,15 +372,7 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4 text-xs">
-            <button
-              id="btn-global-db-reset"
-              type="button"
-              onClick={handleResetDatabase}
-              title="Khôi phục mặc định"
-              className="border border-slate-205 flex items-center gap-1 shadow-sm font-semibold rounded bg-slate-50 hover:bg-red-50 text-slate-600 hover:text-red-700 py-1 px-3 transition-all cursor-pointer text-[10px]"
-            >
-              Reset dữ liệu mẫu về mặc định 
-            </button>
+
             <div className="text-xs text-slate-400 font-medium flex items-center gap-1.5">
               <span>Đồng bộ LocalStorage</span>
               <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-ping"></span>

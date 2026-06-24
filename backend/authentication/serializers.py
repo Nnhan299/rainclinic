@@ -34,7 +34,7 @@ class RegisterSerializer(serializers.ModelSerializer):
     )
     password_confirm = serializers.CharField(
         write_only=True,
-        required=True,
+        required=False,
         style={'input_type': 'password'},
     )
 
@@ -46,14 +46,17 @@ class RegisterSerializer(serializers.ModelSerializer):
         ]
 
     def validate(self, attrs):
-        if attrs['password'] != attrs['password_confirm']:
-            raise serializers.ValidationError({
-                'password_confirm': 'Mật khẩu xác nhận không khớp.',
-            })
+        password = attrs.get('password')
+        password_confirm = attrs.get('password_confirm')
+        if password_confirm is not None:
+            if password != password_confirm:
+                raise serializers.ValidationError({
+                    'password_confirm': 'Mật khẩu xác nhận không khớp.',
+                })
         return attrs
 
     def create(self, validated_data):
-        validated_data.pop('password_confirm')
+        validated_data.pop('password_confirm', None)
         password = validated_data.pop('password')
 
         user = User(**validated_data)
@@ -99,3 +102,13 @@ class UpdateProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['full_name', 'phone', 'email']
+
+
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """Custom TokenObtainPairSerializer để trả về thêm trường is_admin."""
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        data['is_admin'] = self.user.role == 'admin' or self.user.is_superuser
+        return data

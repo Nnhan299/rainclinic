@@ -189,3 +189,14 @@ class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated, IsAdminRole]
+
+
+from rest_framework_simplejwt.views import TokenObtainPairView
+from .serializers import CustomTokenObtainPairSerializer
+
+class CustomTokenObtainPairView(TokenObtainPairView):
+    """
+    POST /api/auth/token/
+    Trả về access, refresh token và is_admin.
+    """
+    serializer_class = CustomTokenObtainPairSerializer

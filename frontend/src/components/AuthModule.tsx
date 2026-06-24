@@ -36,7 +36,7 @@ export default function AuthModule({ onLogin, existingUsers, onRegister, onShowT
     return /\S+@\S+\.\S+/.test(email);
   };
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!loginUsername.trim()) {
       onShowToast('Vui lòng nhập tên đăng nhập', 'error');
@@ -47,47 +47,61 @@ export default function AuthModule({ onLogin, existingUsers, onRegister, onShowT
       return;
     }
 
-    // Interactive reviewer login suggestions compatibility (or manual types)
-    const normalizedUsername = loginUsername.trim().toLowerCase();
-    
-    // Find among active users
-    const matchedUser = existingUsers.find(
-      u => u.username.toLowerCase() === normalizedUsername
-    );
-
-    if (matchedUser) {
-      onLogin(matchedUser);
-      onShowToast(`Chào mừng trở lại, ${matchedUser.fullName}! Đăng nhập với tư cách ${matchedUser.role === 'admin' ? 'Quản trị viên' : 'Bệnh nhân'}.`, 'success');
-    } else {
-      // Create transient on the fly for reviewer convenience
-      if (normalizedUsername === 'admin') {
-        const dummyAdmin: User = {
-          id: 'usr-admin-transient',
-          username: 'admin',
-          email: 'admin@rainclinic.med',
-          fullName: 'BS. Arthur Rain',
-          phone: '+84 987 654 321',
-          role: 'admin'
-        };
-        onLogin(dummyAdmin);
-        onShowToast('Đăng nhập thành công: BS. Arthur Rain (Quản trị viên)', 'success');
-      } else {
-        // Assume patient for customized arbitrary test usernames with standard password
-        const dummyPatient: User = {
-          id: `usr-${Date.now()}`,
+    try {
+      const response = await fetch('http://localhost:8000/api/auth/token/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
           username: loginUsername.trim(),
-          email: `${normalizedUsername}@example.com`,
-          fullName: loginUsername.trim().charAt(0).toUpperCase() + loginUsername.trim().slice(1),
-          phone: '+84 912 000 111',
-          role: 'patient',
-        };
-        onLogin(dummyPatient);
-        onShowToast(`Đăng nhập thành công với bệnh nhân mới: ${dummyPatient.fullName}`, 'success');
+          password: loginPassword,
+        }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.detail || errData.error || 'Tên đăng nhập hoặc mật khẩu không đúng.');
       }
+
+      const data = await response.json();
+      const { access, refresh, is_admin } = data;
+
+      // Lưu tokens và quyền is_admin vào LocalStorage của trình duyệt theo đúng yêu cầu
+      localStorage.setItem('rc_access_token', access);
+      localStorage.setItem('rc_refresh_token', refresh);
+      localStorage.setItem('rc_is_admin', String(is_admin));
+
+      // Lấy chi tiết thông tin tài khoản qua API me/
+      const meResponse = await fetch('http://localhost:8000/api/auth/me/', {
+        headers: {
+          'Authorization': `Bearer ${access}`,
+        },
+      });
+
+      if (!meResponse.ok) {
+        throw new Error('Đăng nhập thành công nhưng không thể tải thông tin hồ sơ.');
+      }
+
+      const meData = await meResponse.json();
+
+      const userProfile: User = {
+        id: String(meData.id),
+        username: meData.username,
+        email: meData.email,
+        fullName: meData.full_name,
+        phone: meData.phone,
+        role: meData.role,
+      };
+
+      onLogin(userProfile);
+      onShowToast(`Chào mừng trở lại, ${userProfile.fullName}! Đăng nhập thành công.`, 'success');
+    } catch (err: any) {
+      onShowToast(err.message || 'Đăng nhập thất bại', 'error');
     }
   };
 
-  const handleRegisterSubmit = (e: React.FormEvent) => {
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const newErrors: Record<string, string> = {};
 
@@ -124,26 +138,59 @@ export default function AuthModule({ onLogin, existingUsers, onRegister, onShowT
       return;
     }
 
-    // Success register
-    const newUser: User = {
-      id: `usr-${Date.now()}`,
-      username: regUsername.trim(),
-      email: regEmail.trim(),
-      fullName: regFullName.trim(),
-      phone: regPhone.trim(),
-      role: regUsername.toLowerCase().includes('admin') ? 'admin' : 'patient'
-    };
+    try {
+      const response = await fetch('http://localhost:8000/api/auth/register/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          username: regUsername.trim(),
+          password: regPassword,
+          email: regEmail.trim(),
+          full_name: regFullName.trim(),
+          phone: regPhone.trim(),
+        }),
+      });
 
-    onRegister(newUser);
-    onLogin(newUser);
-    onShowToast(`Tạo tài khoản thành công! Chào mừng tới RainClinic, ${newUser.fullName}!`, 'success');
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        let errMsg = 'Đăng ký tài khoản thất bại.';
+        if (errData) {
+          const keys = Object.keys(errData);
+          if (keys.length > 0) {
+            const firstErr = errData[keys[0]];
+            errMsg = Array.isArray(firstErr) ? firstErr[0] : String(firstErr);
+          }
+        }
+        throw new Error(errMsg);
+      }
+
+      const data = await response.json();
+      const { tokens, user: userData } = data;
+
+      // Lưu tokens và quyền is_admin vào LocalStorage
+      localStorage.setItem('rc_access_token', tokens.access);
+      localStorage.setItem('rc_refresh_token', tokens.refresh);
+      localStorage.setItem('rc_is_admin', 'false');
+
+      const newUserProfile: User = {
+        id: String(userData.id),
+        username: userData.username,
+        email: userData.email,
+        fullName: userData.full_name,
+        phone: userData.phone,
+        role: userData.role,
+      };
+
+      onRegister(newUserProfile);
+      onLogin(newUserProfile);
+      onShowToast(`Tạo tài khoản thành công! Chào mừng tới RainClinic, ${newUserProfile.fullName}!`, 'success');
+    } catch (err: any) {
+      onShowToast(err.message || 'Đăng ký tài khoản thất bại', 'error');
+    }
   };
 
-  const handleShortcutLogin = (username: string) => {
-    setLoginUsername(username);
-    setLoginPassword(username);
-    onShowToast(`Đã tự động điền thông tin đăng nhập cho: ${username}`, 'info');
-  };
 
   return (
     <div id="auth-container" className="min-h-[80vh] flex flex-col items-center justify-center p-6 md:p-12">
@@ -272,34 +319,6 @@ export default function AuthModule({ onLogin, existingUsers, onRegister, onShowT
                     >
                       Chưa có tài khoản đăng nhập? <span className="underline decoration-dotted font-bold">Đăng ký tại đây</span>
                     </button>
-                  </div>
-
-                  {/* Sandbox Credential Shortcuts for Reviewer */}
-                  <div id="credential-shortcuts" className="pt-5 border-t border-slate-200/60 space-y-2.5">
-                    <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                      <Sparkles className="w-3.5 h-3.5 text-teal-500 animate-spin" />
-                      <span>Đăng nhập nhanh theo vai trò:</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        id="btn-quick-patient"
-                        type="button"
-                        onClick={() => handleShortcutLogin('patient')}
-                        className="p-2.5 text-left text-xs bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-800 transition-all cursor-pointer"
-                      >
-                        <div className="font-bold text-blue-950 text-xs">Phía Bệnh Nhân</div>
-                        <span className="text-[10px] text-slate-500 block mt-0.5 font-mono">ID: patient</span>
-                      </button>
-                      <button
-                        id="btn-quick-admin"
-                        type="button"
-                        onClick={() => handleShortcutLogin('admin')}
-                        className="p-2.5 text-left text-xs bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-800 transition-all cursor-pointer"
-                      >
-                        <div className="font-bold text-blue-950 text-xs">Quản trị Phòng khám</div>
-                        <span className="text-[10px] text-slate-500 block mt-0.5 font-mono">ID: admin</span>
-                      </button>
-                    </div>
                   </div>
                 </motion.form>
               ) : (

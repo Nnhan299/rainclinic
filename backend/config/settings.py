@@ -5,6 +5,12 @@ Django settings for RainClinic backend.
 import os
 from pathlib import Path
 from datetime import timedelta
+import dj_database_url
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv(BASE_DIR := Path(__file__).resolve().parent.parent / '.env')
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -38,6 +44,7 @@ INSTALLED_APPS = [
 
     # Local apps
     'authentication',
+    'clinic',
 ]
 
 MIDDLEWARE = [
@@ -73,12 +80,23 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 
 # Database
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+# Cấu hình sử dụng PostgreSQL qua DATABASE_URL nếu có, ngược lại fallback về SQLite3
+db_url = os.environ.get('DATABASE_URL')
+if db_url and not db_url.startswith('sqlite'):
+    DATABASES = {
+        'default': dj_database_url.config(
+            default=db_url,
+            conn_max_age=600,
+            conn_health_checks=True,
+        )
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 
 # Password validation
@@ -139,8 +157,6 @@ SIMPLE_JWT = {
 # ============================================================
 # CORS Configuration
 # ============================================================
-CORS_ALLOWED_ORIGINS = [
-    os.environ.get('FRONTEND_URL', 'http://localhost:3000'),
-]
+CORS_ALLOW_ALL_ORIGINS = True
 
 CORS_ALLOW_CREDENTIALS = True
