@@ -112,16 +112,16 @@ export default function App() {
   // ----------------------------------------------------
   const handleShowToast = (message: string, type: 'success' | 'error' | 'info') => {
     const newId = `toast-${Date.now()}-${Math.random()}`;
-    setToasts((prev) => [...prev, { id: newId, message, type }]);
+    setToasts((prev: Toast[]) => [...prev, { id: newId, message, type }]);
 
     // Auto-destruct toast after 4000ms
     setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== newId));
+      setToasts((prev: Toast[]) => prev.filter((t: Toast) => t.id !== newId));
     }, 4000);
   };
 
   const removeToast = (id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
+    setToasts((prev: Toast[]) => prev.filter((t: Toast) => t.id !== id));
   };
 
   // ----------------------------------------------------
@@ -182,7 +182,7 @@ export default function App() {
     timeSlot: string;
     symptoms: string;
   }) => {
-    const selectedService = services.find((s) => s.id === bookingData.serviceId);
+    const selectedService = services.find((s: MedicalService) => s.id === bookingData.serviceId);
     if (!selectedService || !currentUser) return;
 
     const newAppointment: Appointment = {
@@ -200,13 +200,13 @@ export default function App() {
       createdAt: new Date().toISOString(),
     };
 
-    setAppointments((prev) => [newAppointment, ...prev]);
+    setAppointments((prev: Appointment[]) => [newAppointment, ...prev]);
   };
 
   // APPOINTMENT CANCELLATION HANDLER
   const handleCancelAppointment = (id: string) => {
-    setAppointments((prev) =>
-      prev.map((apt) =>
+    setAppointments((prev: Appointment[]) =>
+      prev.map((apt: Appointment) =>
         apt.id === id ? { ...apt, status: 'cancelled' as const } : apt
       )
     );
@@ -215,8 +215,8 @@ export default function App() {
 
   // APPOINTMENT APPROVAL HANDLER
   const handleApproveAppointment = (id: string) => {
-    setAppointments((prev) =>
-      prev.map((apt) =>
+    setAppointments((prev: Appointment[]) =>
+      prev.map((apt: Appointment) =>
         apt.id === id ? { ...apt, status: 'confirmed' as const } : apt
       )
     );
@@ -225,11 +225,11 @@ export default function App() {
 
   // SERVICE MANAGEMENT HANDLERS
   const handleAddService = (newService: MedicalService) => {
-    setServices((prev) => [...prev, newService]);
+    setServices((prev: MedicalService[]) => [...prev, newService]);
   };
 
   const handleDeleteService = (id: string) => {
-    setServices((prev) => prev.filter((s) => s.id !== id));
+    setServices((prev: MedicalService[]) => prev.filter((s: MedicalService) => s.id !== id));
     handleShowToast('Dịch vụ y tế dỡ bỏ khỏi danh sách vận hành hoạt động đầu mối.', 'error');
   };
 
@@ -240,11 +240,11 @@ export default function App() {
       time,
       isAvailable: true,
     };
-    setTimeSlots((prev) => [...prev, newSlot]);
+    setTimeSlots((prev: TimeSlot[]) => [...prev, newSlot]);
   };
 
   const handleDeleteTimeSlot = (id: string) => {
-    setTimeSlots((prev) => prev.filter((s) => s.id !== id));
+    setTimeSlots((prev: TimeSlot[]) => prev.filter((s: TimeSlot) => s.id !== id));
     handleShowToast('Đã xóa ca giờ hoạt động tương ứng khỏi bệnh viện.', 'error');
   };
 
