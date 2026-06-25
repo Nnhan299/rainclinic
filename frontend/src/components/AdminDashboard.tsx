@@ -5,9 +5,9 @@
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  Users, CheckCircle2, AlertCircle, Plus, Trash2, Calendar, 
-  Filter, ShieldAlert, DollarSign, Clock, Stethoscope, X, Building 
+import {
+  Users, CheckCircle2, AlertCircle, Plus, Trash2, Calendar,
+  Filter, ShieldAlert, DollarSign, Clock, Stethoscope, X, Building
 } from 'lucide-react';
 import { MedicalService, TimeSlot, Appointment } from '../types';
 
@@ -22,6 +22,7 @@ interface AdminDashboardProps {
   onAddTimeSlot: (time: string) => void;
   onDeleteTimeSlot: (id: string) => void;
   onShowToast: (msg: string, type: 'success' | 'error' | 'info') => void;
+  onRefreshAppointments?: () => void;
 }
 
 export default function AdminDashboard({
@@ -35,9 +36,62 @@ export default function AdminDashboard({
   onAddTimeSlot,
   onDeleteTimeSlot,
   onShowToast,
+  onRefreshAppointments,
 }: AdminDashboardProps) {
-  
+
   // 1. MASTER WORKSPACE FILTERS
+  const [localAppointments, setLocalAppointments] = React.useState<Appointment[]>(appointments);
+
+  React.useEffect(() => {
+    setLocalAppointments(appointments);
+  }, [appointments]);
+
+  // --- HÀM MỚI THÊM: Xử lý nút "Duyệt" (API 8) ---
+  const handleConfirmAPI = async (id: string | number) => {
+    // Kiểm tra xem ID có phải là mock ID (bắt đầu bằng 'apt-') hay không
+    if (typeof id === 'string' && id.startsWith('apt-')) {
+      onApproveAppointment(id);
+      setLocalAppointments((prev) =>
+        prev.map((apt) => (apt.id === id ? { ...apt, status: 'confirmed' } : apt))
+      );
+      onShowToast('Đã phê duyệt lịch hẹn (giả lập) thành công!', 'success');
+      return;
+    }
+
+    try {
+      // credentials: 'include' giúp gửi kèm Cookie/Session của trình duyệt lên Backend Django
+      const response = await fetch(`http://127.0.0.1:5000/api/admin/appointments/${id}/confirm/`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include'
+      });
+
+      if (response.status === 401) {
+        throw new Error('Bạn chưa đăng nhập hoặc không có quyền thực hiện hành động này!');
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Duyệt lịch thất bại.');
+      }
+
+      onShowToast('Đã duyệt lịch hẹn thành công!', 'success');
+
+      setLocalAppointments((prev) =>
+        prev.map((apt) => (apt.id === id ? { ...apt, status: 'confirmed' } : apt))
+      );
+
+      if (onRefreshAppointments) {
+        onRefreshAppointments();
+      }
+
+    } catch (error: any) {
+      console.error(error);
+      onShowToast(error.message || 'Có lỗi xảy ra.', 'error');
+    }
+  };
   const [filterDate, setFilterDate] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'confirmed' | 'cancelled'>('all');
 
@@ -65,12 +119,13 @@ export default function AdminDashboard({
     const todayStr = new Date().toISOString().split('T')[0];
     return apt.status === 'confirmed' && apt.date === todayStr;
   }).length;
-  
+
+
   // Total confirmed throughout the system
-  const totalConfirmedCount = appointments.filter((apt) => apt.status === 'confirmed').length;
+  const totalConfirmedCount = localAppointments.filter((apt) => apt.status === 'confirmed').length;
 
   // Filter Master Table rows based on State
-  const filteredAppointments = appointments.filter((apt) => {
+  const filteredAppointments = localAppointments.filter((apt) => {
     const matchesDate = filterDate ? apt.date === filterDate : true;
     const matchesStatus = filterStatus === 'all' ? true : apt.status === filterStatus;
     return matchesDate && matchesStatus;
@@ -113,7 +168,7 @@ export default function AdminDashboard({
 
     onAddService(newSrvObj);
     onShowToast(`Thành công! Đã ban hành thêm dịch vụ "${newSrvObj.name}".`, 'success');
-    
+
     // Reset and close
     setIsServiceModalOpen(false);
     setNewSrvName('');
@@ -133,7 +188,7 @@ export default function AdminDashboard({
     }
 
     const slotTimeFormatted = `${newSlotStart} - ${newSlotEnd}`;
-    
+
     // Check if slot name exists already
     const isDuplicate = timeSlots.some((s) => s.time === slotTimeFormatted);
     if (isDuplicate) {
@@ -147,7 +202,7 @@ export default function AdminDashboard({
 
   return (
     <div id="admin-dashboard-root" className="space-y-8 animate-fade-in font-sans">
-      
+
       {/* 1. TOP TITLE HEADER AND ROLES - Professional theme style */}
       <div id="admin-welcome-header" className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-xl border border-slate-200/80 shadow-md">
         <div>
@@ -177,7 +232,7 @@ export default function AdminDashboard({
 
       {/* 2. METRIC CARDS SUMMARY GRID */}
       <div id="admin-metrics-row" className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        
+
         {/* Metric 1: Total Appointments */}
         <motion.div
           whileHover={{ y: -2 }}
@@ -237,7 +292,7 @@ export default function AdminDashboard({
 
       {/* 3. MASTER APPOINTMENT CONTROL CENTER (FULL WIDTH TABLE WITH ADVANCED FILTERS) */}
       <div id="master-control-card" className="bg-white rounded-xl border border-slate-200/80 shadow-md overflow-hidden">
-        
+
         {/* Table Title and Advanced Filters */}
         <div className="p-6 md:p-8 border-b border-slate-200 space-y-4">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -257,7 +312,7 @@ export default function AdminDashboard({
 
           {/* INSTANT TOP FILTER PANEL - high contrast white bg with custom borders */}
           <div className="p-4 rounded-lg bg-slate-50 border border-slate-200 flex flex-col sm:flex-row gap-4 items-end">
-            
+
             {/* Filter Date Picker */}
             <div className="w-full sm:w-auto space-y-1.5 flex-1 max-w-xs">
               <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-widest flex items-center gap-1.5">
@@ -394,7 +449,7 @@ export default function AdminDashboard({
                               <button
                                 id={`master-approve-${apt.id}`}
                                 type="button"
-                                onClick={() => onApproveAppointment(apt.id)}
+                                onClick={() => handleConfirmAPI(apt.id)}
                                 className="px-3 py-1.5 text-[10px] bg-emerald-650 hover:bg-emerald-700 text-white font-bold rounded-lg transition-all shadow-sm flex items-center gap-1 cursor-pointer"
                               >
                                 <span>Phê duyệt đặt lịch</span>
@@ -427,7 +482,7 @@ export default function AdminDashboard({
 
       {/* 4. SIDE-BY-SIDE CONFIGURATION MANAGERS GRID (SERVICES & TIME SLOTS) */}
       <div id="config-grid-layout" className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        
+
         {/* Core Config Section 1: Service Management */}
         <div id="service-catalog-config-card" className="bg-white rounded-xl border border-slate-200/80 shadow-md overflow-hidden flex flex-col justify-between">
           <div>
@@ -495,7 +550,7 @@ export default function AdminDashboard({
               </table>
             </div>
           </div>
-          
+
           <div className="p-4 bg-slate-50 border-t border-slate-200 text-[10px] text-slate-500 italic">
             * Chú ý: Việc xóa bớt dịch vụ y tế chính quy sẽ loại bỏ lựa chọn của những bệnh nhân đăng ký mới, các lịch sử và tiến trình đã lưu trữ trước đó sẽ hoàn toàn được giữ nguyên để phục vụ đối chiếu bệnh án sau này.
           </div>
@@ -615,7 +670,7 @@ export default function AdminDashboard({
               </div>
 
               <form id="create-service-form" onSubmit={handleCreateService} className="p-6 space-y-4">
-                
+
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-widest">Tiêu đề dịch vụ y tế</label>
                   <input
