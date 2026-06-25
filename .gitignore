@@ -29,3 +29,7 @@ env/
 
 # OS files
 Thumbs.db
+
+# Documents
+*.doc
+*.docx

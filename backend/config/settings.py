@@ -5,6 +5,11 @@ Django settings for RainClinic backend.
 import os
 from pathlib import Path
 from datetime import timedelta
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv(BASE_DIR := Path(__file__).resolve().parent.parent / '.env')
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -147,8 +152,6 @@ SIMPLE_JWT = {
 # ============================================================
 # CORS Configuration
 # ============================================================
-CORS_ALLOWED_ORIGINS = [
-    os.environ.get('FRONTEND_URL', 'http://localhost:3000'),
-]
+CORS_ALLOW_ALL_ORIGINS = True
 
 CORS_ALLOW_CREDENTIALS = True

@@ -5,8 +5,8 @@
 
 import React from 'react';
 import { 
-  ShieldCheck, Stethoscope, LogIn, LogOut, RefreshCw, 
-  Sparkles, Activity, ShieldAlert, UserCheck 
+  Stethoscope, LogIn, LogOut, 
+  Activity, ShieldAlert 
 } from 'lucide-react';
 import { User } from '../types';
 
@@ -15,7 +15,6 @@ interface NavbarProps {
   onChangeTab: (tab: 'auth' | 'patient' | 'admin') => void;
   currentUser: User | null;
   onLogout: () => void;
-  onQuickRoleToggle: () => void;
 }
 
 export default function Navbar({
@@ -23,8 +22,9 @@ export default function Navbar({
   onChangeTab,
   currentUser,
   onLogout,
-  onQuickRoleToggle,
 }: NavbarProps) {
+  const isAdmin = currentUser !== null && currentUser.role === 'admin';
+
   return (
     <header id="sticky-header" className="sticky top-0 z-40 w-full mb-6 py-0 px-8 bg-blue-900 text-white shadow-lg shrink-0 h-16 flex items-center">
       <div className="max-w-7xl mx-auto w-full flex items-center justify-between gap-4 h-full">
@@ -35,7 +35,7 @@ export default function Navbar({
             <Activity className="w-6 h-6 shrink-0" />
           </div>
           <div>
-            <h1 className="text-xl font-bold tracking-tight font-display flex items-center gap-1.5 text-white">
+            <h1 id="brand-title-nav" className="text-xl font-bold tracking-tight font-display flex items-center gap-1.5 text-white">
               Rain<span className="text-teal-400">Clinic</span> <span className="text-[9px] bg-teal-500/20 text-teal-300 font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider border border-teal-500/30">PRO</span>
             </h1>
           </div>
@@ -44,20 +44,24 @@ export default function Navbar({
         {/* Persistence navigation tabs centered or grouped */}
         <nav id="nav-navigation" className="flex h-full items-center">
           
-          <button
-            id="nav-tab-auth"
-            type="button"
-            onClick={() => onChangeTab('auth')}
-            className={`px-5 h-16 text-xs md:text-sm font-semibold transition-all flex items-center gap-1.5 cursor-pointer border-b-2 ${
-              currentTab === 'auth'
-                ? 'border-teal-400 bg-blue-800/40 text-white'
-                : 'border-transparent text-blue-100 opacity-60 hover:opacity-100'
-            }`}
-          >
-            <LogIn className="w-3.5 h-3.5" />
-            <span>XÁC THỰC BOOT</span>
-          </button>
+          {/* ĐĂNG NHẬP / ĐĂNG KÝ: Chỉ hiển thị khi chưa đăng nhập */}
+          {!currentUser && (
+            <button
+              id="nav-tab-auth"
+              type="button"
+              onClick={() => onChangeTab('auth')}
+              className={`px-5 h-16 text-xs md:text-sm font-semibold transition-all flex items-center gap-1.5 cursor-pointer border-b-2 ${
+                currentTab === 'auth'
+                  ? 'border-teal-400 bg-blue-800/40 text-white'
+                  : 'border-transparent text-blue-100 opacity-60 hover:opacity-100'
+              }`}
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              <span>ĐĂNG NHẬP / ĐĂNG KÝ</span>
+            </button>
+          )}
 
+          {/* CỔNG BỆNH NHÂN: Hiển thị cho cả bệnh nhân, admin hoặc khi chưa đăng nhập */}
           <button
             id="nav-tab-patient"
             type="button"
@@ -72,22 +76,25 @@ export default function Navbar({
             <span>CỔNG BỆNH NHÂN</span>
           </button>
 
-          <button
-            id="nav-tab-admin"
-            type="button"
-            onClick={() => onChangeTab('admin')}
-            className={`px-5 h-16 text-xs md:text-sm font-semibold transition-all flex items-center gap-1.5 cursor-pointer border-b-2 ${
-              currentTab === 'admin'
-                ? 'border-teal-400 bg-blue-800/40 text-white'
-                : 'border-transparent text-blue-100 opacity-60 hover:opacity-100'
-            }`}
-          >
-            <ShieldAlert className="w-3.5 h-3.5" />
-            <span>QUẢN TRỊ VIÊN</span>
-          </button>
+          {/* QUẢN TRỊ VIÊN: Chỉ hiển thị cho Admin */}
+          {isAdmin && (
+            <button
+              id="nav-tab-admin"
+              type="button"
+              onClick={() => onChangeTab('admin')}
+              className={`px-5 h-16 text-xs md:text-sm font-semibold transition-all flex items-center gap-1.5 cursor-pointer border-b-2 ${
+                currentTab === 'admin'
+                  ? 'border-teal-400 bg-blue-800/40 text-white'
+                  : 'border-transparent text-blue-100 opacity-60 hover:opacity-100'
+              }`}
+            >
+              <ShieldAlert className="w-3.5 h-3.5" />
+              <span>QUẢN TRỊ VIÊN</span>
+            </button>
+          )}
         </nav>
 
-        {/* User Identity / Role state simulator indicator */}
+        {/* User Identity / Profile logout trigger */}
         <div id="nav-user-indicator" className="flex items-center gap-3">
           {currentUser ? (
             <div className="flex items-center gap-3">
@@ -101,18 +108,6 @@ export default function Navbar({
                 {currentUser.fullName.split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase()}
               </div>
 
-              {/* Quick toggle simulator */}
-              <button
-                id="btn-nav-switch-role"
-                type="button"
-                onClick={onQuickRoleToggle}
-                title="Chuyển nhanh vai trò thử nghiệm"
-                className="p-1.5 hover:bg-blue-850/60 text-teal-300 hover:text-white rounded-lg transition-all flex items-center gap-1 shrink-0 cursor-pointer font-bold text-[10px]"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span className="hidden lg:inline">Chuyển vai trò</span>
-              </button>
-
               <button
                 id="btn-nav-logout"
                 type="button"
@@ -125,7 +120,7 @@ export default function Navbar({
             </div>
           ) : (
             <span className="text-xs text-blue-200 italic font-medium bg-blue-950/30 px-3 py-1.5 rounded-lg border border-blue-800/40">
-              Chế độ Thử nghiệm Sandbox
+              Hệ thống Quản lý RainClinic
             </span>
           )}
         </div>
