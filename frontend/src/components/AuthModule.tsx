@@ -36,7 +36,7 @@ export default function AuthModule({ onLogin, existingUsers, onRegister, onShowT
     return /\S+@\S+\.\S+/.test(email);
   };
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!loginUsername.trim()) {
       onShowToast('Vui lòng nhập tên đăng nhập', 'error');
@@ -47,47 +47,41 @@ export default function AuthModule({ onLogin, existingUsers, onRegister, onShowT
       return;
     }
 
-    // Interactive reviewer login suggestions compatibility (or manual types)
-    const normalizedUsername = loginUsername.trim().toLowerCase();
-    
-    // Find among active users
-    const matchedUser = existingUsers.find(
-      u => u.username.toLowerCase() === normalizedUsername
-    );
-
-    if (matchedUser) {
-      onLogin(matchedUser);
-      onShowToast(`Chào mừng trở lại, ${matchedUser.fullName}! Đăng nhập với tư cách ${matchedUser.role === 'admin' ? 'Quản trị viên' : 'Bệnh nhân'}.`, 'success');
-    } else {
-      // Create transient on the fly for reviewer convenience
-      if (normalizedUsername === 'admin') {
-        const dummyAdmin: User = {
-          id: 'usr-admin-transient',
-          username: 'admin',
-          email: 'admin@rainclinic.med',
-          fullName: 'BS. Arthur Rain',
-          phone: '+84 987 654 321',
-          role: 'admin'
-        };
-        onLogin(dummyAdmin);
-        onShowToast('Đăng nhập thành công: BS. Arthur Rain (Quản trị viên)', 'success');
-      } else {
-        // Assume patient for customized arbitrary test usernames with standard password
-        const dummyPatient: User = {
-          id: `usr-${Date.now()}`,
+    try {
+      const res = await fetch('http://localhost:8000/api/auth/login/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           username: loginUsername.trim(),
-          email: `${normalizedUsername}@example.com`,
-          fullName: loginUsername.trim().charAt(0).toUpperCase() + loginUsername.trim().slice(1),
-          phone: '+84 912 000 111',
-          role: 'patient',
-        };
-        onLogin(dummyPatient);
-        onShowToast(`Đăng nhập thành công với bệnh nhân mới: ${dummyPatient.fullName}`, 'success');
+          password: loginPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Tên đăng nhập hoặc mật khẩu không chính xác.');
       }
+
+      const backendUser = data.user;
+      const userObj: User = {
+        id: backendUser.id.toString(),
+        username: backendUser.username,
+        email: backendUser.email,
+        fullName: backendUser.full_name || backendUser.username,
+        phone: backendUser.phone || '',
+        role: backendUser.role,
+      };
+
+      localStorage.setItem('rc_access_token', data.tokens.access);
+      localStorage.setItem('rc_refresh_token', data.tokens.refresh);
+
+      onLogin(userObj);
+      onShowToast(`Chào mừng trở lại, ${userObj.fullName}! Đăng nhập với tư cách ${userObj.role === 'admin' ? 'Quản trị viên' : 'Bệnh nhân'}.`, 'success');
+    } catch (err: any) {
+      onShowToast(err.message || 'Lỗi kết nối hoặc sai thông tin đăng nhập.', 'error');
     }
   };
 
-  const handleRegisterSubmit = (e: React.FormEvent) => {
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const newErrors: Record<string, string> = {};
 
@@ -124,19 +118,43 @@ export default function AuthModule({ onLogin, existingUsers, onRegister, onShowT
       return;
     }
 
-    // Success register
-    const newUser: User = {
-      id: `usr-${Date.now()}`,
-      username: regUsername.trim(),
-      email: regEmail.trim(),
-      fullName: regFullName.trim(),
-      phone: regPhone.trim(),
-      role: regUsername.toLowerCase().includes('admin') ? 'admin' : 'patient'
-    };
+    try {
+      const res = await fetch('http://localhost:8000/api/auth/register/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: regUsername.trim(),
+          password: regPassword,
+          password_confirm: regPassword,
+          email: regEmail.trim(),
+          full_name: regFullName.trim(),
+          phone: regPhone.trim(),
+          role: regUsername.toLowerCase().includes('admin') ? 'admin' : 'patient',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Lỗi khi đăng ký tài khoản.');
+      }
 
-    onRegister(newUser);
-    onLogin(newUser);
-    onShowToast(`Tạo tài khoản thành công! Chào mừng tới RainClinic, ${newUser.fullName}!`, 'success');
+      const backendUser = data.user;
+      const userObj: User = {
+        id: backendUser.id.toString(),
+        username: backendUser.username,
+        email: backendUser.email,
+        fullName: backendUser.full_name || backendUser.username,
+        phone: backendUser.phone || '',
+        role: backendUser.role,
+      };
+
+      localStorage.setItem('rc_access_token', data.tokens.access);
+      localStorage.setItem('rc_refresh_token', data.tokens.refresh);
+
+      onRegister(userObj);
+      onShowToast(`Tạo tài khoản thành công! Chào mừng tới RainClinic, ${userObj.fullName}!`, 'success');
+    } catch (err: any) {
+      onShowToast(err.message || 'Lỗi khi đăng ký tài khoản hoặc tài khoản đã tồn tại.', 'error');
+    }
   };
 
   const handleShortcutLogin = (username: string) => {

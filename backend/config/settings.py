@@ -139,8 +139,11 @@ SIMPLE_JWT = {
 # ============================================================
 # CORS Configuration
 # ============================================================
-CORS_ALLOWED_ORIGINS = [
-    os.environ.get('FRONTEND_URL', 'http://localhost:3000'),
-]
+if DEBUG:
+    CORS_ALLOW_ALL_ORIGINS = True
+else:
+    CORS_ALLOWED_ORIGINS = [
+        os.environ.get('FRONTEND_URL', 'http://localhost:3000'),
+    ]
 
 CORS_ALLOW_CREDENTIALS = True

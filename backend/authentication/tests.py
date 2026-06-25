@@ -169,3 +169,154 @@ class PermissionTests(TestCase):
 
         response = self.client.get(f'{self.users_url}?role=patient')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+
+from .models import Service, TimeSlot, Appointment
+
+class AppointmentTests(TestCase):
+    """Test suite cho luồng đặt lịch và hủy lịch khám (Member 3)."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.login_url = '/api/auth/login/'
+        self.book_url = '/api/appointments/book/'
+        
+        # Tạo bệnh nhân mẫu
+        self.patient = User.objects.create_user(
+            username='jane',
+            password='JanePass123!',
+            email='jane@example.com',
+            full_name='Jane Doe',
+            phone='+84 912 345 678',
+            role='patient',
+        )
+        
+        # Tạo bệnh nhân khác
+        self.other_patient = User.objects.create_user(
+            username='other',
+            password='OtherPass123!',
+            email='other@example.com',
+            full_name='Other Patient',
+            phone='+84 912 345 679',
+            role='patient',
+        )
+
+        # Tạo dịch vụ mẫu
+        self.service = Service.objects.create(
+            name='Khám Sức khỏe Tổng quát',
+            category='Y học Gia đình',
+            duration_min=30,
+            price=45,
+            doctor_name='BS. Evelyn Reed',
+            description='Kiểm tra sức khỏe tổng quát toàn diện'
+        )
+
+        # Tạo khung giờ mẫu
+        self.slot = TimeSlot.objects.create(
+            time='09:00 - 10:00',
+            is_available=True
+        )
+
+    def _get_token(self, username, password):
+        resp = self.client.post(
+            self.login_url,
+            {'username': username, 'password': password},
+            format='json',
+        )
+        return resp.data['tokens']['access']
+
+    def test_book_appointment_success(self):
+        """Đặt lịch hẹn thành công."""
+        token = self._get_token('jane', 'JanePass123!')
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+
+        data = {
+            'service_id': self.service.id,
+            'slot_id': self.slot.id,
+            'date': '2026-06-25',
+            'symptoms': 'Đau bụng âm ỉ'
+        }
+        response = self.client.post(self.book_url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['status'], 'pending')
+        self.assertEqual(response.data['serviceName'], self.service.name)
+        self.assertEqual(response.data['timeSlot'], self.slot.time)
+
+    def test_book_appointment_duplicate_slot(self):
+        """Không thể đặt trùng khung giờ vào cùng một ngày."""
+        token = self._get_token('jane', 'JanePass123!')
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+
+        data = {
+            'service_id': self.service.id,
+            'slot_id': self.slot.id,
+            'date': '2026-06-25',
+            'symptoms': 'Đau bụng âm ỉ'
+        }
+        # Đặt lần 1
+        resp1 = self.client.post(self.book_url, data, format='json')
+        self.assertEqual(resp1.status_code, status.HTTP_201_CREATED)
+
+        # Đặt lần 2 trùng giờ trùng ngày
+        resp2 = self.client.post(self.book_url, data, format='json')
+        self.assertEqual(resp2.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('slot_id', resp2.data)
+
+    def test_cancel_appointment_success(self):
+        """Hủy lịch hẹn thành công khi đang ở trạng thái pending."""
+        token = self._get_token('jane', 'JanePass123!')
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+
+        # Tạo lịch hẹn pending
+        appointment = Appointment.objects.create(
+            patient=self.patient,
+            service=self.service,
+            time_slot=self.slot,
+            date='2026-06-25',
+            symptoms='Đau bụng',
+            status='pending'
+        )
+
+        cancel_url = f'/api/appointments/{appointment.id}/cancel/'
+        response = self.client.put(cancel_url, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['status'], 'cancelled')
+
+    def test_cancel_appointment_already_confirmed(self):
+        """Bệnh nhân không thể hủy lịch hẹn khi đã được duyệt."""
+        token = self._get_token('jane', 'JanePass123!')
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+
+        # Tạo lịch hẹn confirmed
+        appointment = Appointment.objects.create(
+            patient=self.patient,
+            service=self.service,
+            time_slot=self.slot,
+            date='2026-06-25',
+            symptoms='Đau bụng',
+            status='confirmed'
+        )
+
+        cancel_url = f'/api/appointments/{appointment.id}/cancel/'
+        response = self.client.put(cancel_url, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_cancel_appointment_not_owner(self):
+        """Không thể hủy lịch hẹn của người khác."""
+        # Jane đăng nhập
+        token = self._get_token('jane', 'JanePass123!')
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+
+        # Lịch hẹn của other_patient
+        appointment = Appointment.objects.create(
+            patient=self.other_patient,
+            service=self.service,
+            time_slot=self.slot,
+            date='2026-06-25',
+            symptoms='Đau khớp gối',
+            status='pending'
+        )
+
+        cancel_url = f'/api/appointments/{appointment.id}/cancel/'
+        response = self.client.put(cancel_url, format='json')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
