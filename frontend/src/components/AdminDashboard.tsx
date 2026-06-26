@@ -9,9 +9,11 @@ import {
   Users, CheckCircle2, AlertCircle, Plus, Trash2, Calendar,
   Filter, ShieldAlert, DollarSign, Clock, Stethoscope, X, Building
 } from 'lucide-react';
-import { MedicalService, TimeSlot, Appointment } from '../types';
+import { MedicalService, TimeSlot, Appointment, User } from '../types';
+import { adminCatalogService } from '../services/adminCatalogService';
 
 interface AdminDashboardProps {
+  currentUser: User;
   services: MedicalService[];
   timeSlots: TimeSlot[];
   appointments: Appointment[];
@@ -26,6 +28,7 @@ interface AdminDashboardProps {
 }
 
 export default function AdminDashboard({
+  currentUser,
   services,
   timeSlots,
   appointments,
@@ -41,6 +44,93 @@ export default function AdminDashboard({
 
   // 1. MASTER WORKSPACE FILTERS
   const [localAppointments, setLocalAppointments] = React.useState<Appointment[]>(appointments);
+
+  // === QUẢN LÝ BÁC SĨ (ADMIN ONLY) STATES & HANDLERS ===
+  const [doctors, setDoctors] = useState<User[]>([]);
+  const isAdminUser = currentUser && currentUser.role === 'admin';
+
+  const [isDoctorModalOpen, setIsDoctorModalOpen] = useState(false);
+  const [newDocUsername, setNewDocUsername] = useState('');
+  const [newDocPassword, setNewDocPassword] = useState('');
+  const [newDocEmail, setNewDocEmail] = useState('');
+  const [newDocFullName, setNewDocFullName] = useState('');
+  const [newDocPhone, setNewDocPhone] = useState('');
+  const [doctorErrors, setDoctorErrors] = useState<Record<string, string>>({});
+
+  const fetchDoctors = async () => {
+    try {
+      const data = await adminCatalogService.getAllDoctors();
+      setDoctors(data.map((u: any) => ({
+        id: String(u.id),
+        username: u.username,
+        email: u.email,
+        fullName: u.full_name || u.fullName || '',
+        phone: u.phone || '',
+        role: u.role
+      })));
+    } catch (err) {
+      console.error("Lỗi lấy danh sách bác sĩ:", err);
+    }
+  };
+
+  React.useEffect(() => {
+    if (isAdminUser) {
+      fetchDoctors();
+    }
+  }, [isAdminUser]);
+
+  const handleCreateDoctor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const errorsList: Record<string, string> = {};
+
+    if (!newDocUsername.trim()) errorsList.username = 'Tên đăng nhập không được để trống';
+    if (!newDocPassword.trim() || newDocPassword.length < 6) errorsList.password = 'Mật khẩu phải có ít nhất 6 ký tự';
+    if (!newDocEmail.trim()) errorsList.email = 'Email không được để trống';
+    if (!newDocFullName.trim()) errorsList.fullName = 'Họ và tên bác sĩ không được để trống';
+
+    setDoctorErrors(errorsList);
+
+    if (Object.keys(errorsList).length > 0) {
+      onShowToast('Vui lòng hoàn thiện đúng thông tin biểu mẫu!', 'error');
+      return;
+    }
+
+    try {
+      await adminCatalogService.createDoctor({
+        username: newDocUsername.trim(),
+        password: newDocPassword,
+        email: newDocEmail.trim(),
+        full_name: newDocFullName.trim(),
+        phone: newDocPhone.trim(),
+      });
+      onShowToast(`Thành công! Đã thêm bác sĩ "${newDocFullName.trim()}".`, 'success');
+      setIsDoctorModalOpen(false);
+      // Reset form
+      setNewDocUsername('');
+      setNewDocPassword('');
+      setNewDocEmail('');
+      setNewDocFullName('');
+      setNewDocPhone('');
+      setDoctorErrors({});
+      // Refresh list
+      fetchDoctors();
+    } catch (error: any) {
+      console.error(error);
+      onShowToast(error?.response?.data?.username?.[0] || error?.message || 'Không thể tạo tài khoản bác sĩ.', 'error');
+    }
+  };
+
+  const handleDeleteDoctor = async (id: string | number) => {
+    if (!window.confirm("Bạn có chắc chắn muốn xóa bác sĩ này khỏi hệ thống?")) return;
+    try {
+      await adminCatalogService.deleteDoctor(id);
+      onShowToast("Đã xóa tài khoản bác sĩ thành công!", "success");
+      fetchDoctors();
+    } catch (error: any) {
+      console.error(error);
+      onShowToast("Xóa tài khoản bác sĩ thất bại.", "error");
+    }
+  };
 
   React.useEffect(() => {
     setLocalAppointments(appointments);
@@ -60,7 +150,7 @@ export default function AdminDashboard({
 
     try {
       // credentials: 'include' giúp gửi kèm Cookie/Session của trình duyệt lên Backend Django
-      const response = await fetch(`http://127.0.0.1:5000/api/admin/appointments/${id}/confirm/`, {
+      const response = await fetch(`http://localhost:8000/api/admin/appointments/${id}/confirm/`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -218,15 +308,28 @@ export default function AdminDashboard({
           </p>
         </div>
         <div className="flex gap-2 shrink-0">
-          <button
-            id="btn-trigger-service-modal"
-            type="button"
-            onClick={() => setIsServiceModalOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 hover:bg-blue-950 text-white font-bold text-sm bg-blue-900 rounded-lg transition-all shadow-sm active:scale-95 cursor-pointer"
-          >
-            <Plus className="w-4 h-4 text-white" />
-            <span>Thêm dịch vụ mới</span>
-          </button>
+          {isAdminUser && (
+            <button
+              id="btn-trigger-doctor-modal"
+              type="button"
+              onClick={() => setIsDoctorModalOpen(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 hover:bg-emerald-800 text-white font-bold text-sm bg-emerald-700 rounded-lg transition-all shadow-sm active:scale-95 cursor-pointer"
+            >
+              <Plus className="w-4 h-4 text-white" />
+              <span>Thêm bác sĩ mới</span>
+            </button>
+          )}
+          {isAdminUser && (
+            <button
+              id="btn-trigger-service-modal"
+              type="button"
+              onClick={() => setIsServiceModalOpen(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 hover:bg-blue-950 text-white font-bold text-sm bg-blue-900 rounded-lg transition-all shadow-sm active:scale-95 cursor-pointer"
+            >
+              <Plus className="w-4 h-4 text-white" />
+              <span>Thêm dịch vụ mới</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -496,15 +599,17 @@ export default function AdminDashboard({
                   <p className="text-[11px] text-slate-500">Thiết lập cấu trúc hoạt động danh sách chuyên khoa hỗ trợ</p>
                 </div>
               </div>
-              <button
-                id="btn-add-service-shortcut"
-                type="button"
-                onClick={() => setIsServiceModalOpen(true)}
-                className="inline-flex items-center gap-1 text-xs font-bold text-teal-600 hover:text-teal-800 cursor-pointer"
-              >
-                <Plus className="w-4 h-4 text-teal-600" />
-                <span>Tạo dịch vụ</span>
-              </button>
+              {isAdminUser && (
+                <button
+                  id="btn-add-service-shortcut"
+                  type="button"
+                  onClick={() => setIsServiceModalOpen(true)}
+                  className="inline-flex items-center gap-1 text-xs font-bold text-teal-600 hover:text-teal-800 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4 text-teal-600" />
+                  <span>Tạo dịch vụ</span>
+                </button>
+              )}
             </div>
 
             <div className="overflow-x-auto">
@@ -514,7 +619,7 @@ export default function AdminDashboard({
                     <th className="p-3 pl-6">Dịch vụ (Bác sĩ chuyên trách)</th>
                     <th className="p-3">Khoa viện</th>
                     <th className="p-3 font-mono">Đơn giá / Ca hẹn</th>
-                    <th className="p-3 pr-6 text-right font-bold">Xóa</th>
+                    {isAdminUser && <th className="p-3 pr-6 text-right font-bold">Xóa</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-150 text-slate-800">
@@ -533,17 +638,19 @@ export default function AdminDashboard({
                         <span className="font-extrabold text-slate-900">VNĐ {srv.price}.000</span>
                         <span className="text-slate-400"> / {srv.durationMin}p</span>
                       </td>
-                      <td className="p-3 pr-6 text-right">
-                        <button
-                          id={`del-service-${srv.id}`}
-                          type="button"
-                          onClick={() => onDeleteService(srv.id)}
-                          title="Xóa dịch vụ"
-                          className="p-1.5 hover:bg-red-50 text-red-500 hover:text-red-700 border border-slate-250 hover:border-red-650 rounded-lg transition-colors cursor-pointer"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
+                      {isAdminUser && (
+                        <td className="p-3 pr-6 text-right">
+                          <button
+                            id={`del-service-${srv.id}`}
+                            type="button"
+                            onClick={() => onDeleteService(srv.id)}
+                            title="Xóa dịch vụ"
+                            className="p-1.5 hover:bg-red-50 text-red-500 hover:text-red-700 border border-slate-250 hover:border-red-650 rounded-lg transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -572,38 +679,40 @@ export default function AdminDashboard({
             </div>
 
             {/* Inline Slot Creator Form */}
-            <div className="p-4 bg-slate-50 border-b border-slate-200">
-              <form onSubmit={handleCreateTimeSlot} className="flex flex-wrap items-end gap-3">
-                <div className="flex-1 min-w-[80px] space-y-1">
-                  <span className="block text-[9px] font-bold text-slate-700 uppercase tracking-widest font-sans">Giờ Bắt Đầu</span>
-                  <input
-                    id="timeslot-start-time"
-                    type="time"
-                    value={newSlotStart}
-                    onChange={(e) => setNewSlotStart(e.target.value)}
-                    className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:ring-4 focus:ring-blue-500/10 focus:border-blue-750 text-slate-800 focus:outline-none font-medium"
-                  />
-                </div>
-                <div className="flex-1 min-w-[80px] space-y-1">
-                  <span className="block text-[9px] font-bold text-slate-700 uppercase tracking-widest font-sans">Giờ Kết Thúc</span>
-                  <input
-                    id="timeslot-end-time"
-                    type="time"
-                    value={newSlotEnd}
-                    onChange={(e) => setNewSlotEnd(e.target.value)}
-                    className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:ring-4 focus:ring-blue-500/10 focus:border-blue-750 text-slate-800 focus:outline-none font-medium"
-                  />
-                </div>
-                <button
-                  id="btn-add-timeslot"
-                  type="submit"
-                  className="px-3.5 py-2 hover:bg-blue-950 text-white text-xs font-bold bg-blue-900 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm shrink-0 cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5 text-white" />
-                  <span>Kích hoạt ca</span>
-                </button>
-              </form>
-            </div>
+            {isAdminUser && (
+              <div className="p-4 bg-slate-50 border-b border-slate-200">
+                <form onSubmit={handleCreateTimeSlot} className="flex flex-wrap items-end gap-3">
+                  <div className="flex-1 min-w-[80px] space-y-1">
+                    <span className="block text-[9px] font-bold text-slate-700 uppercase tracking-widest font-sans">Giờ Bắt Đầu</span>
+                    <input
+                      id="timeslot-start-time"
+                      type="time"
+                      value={newSlotStart}
+                      onChange={(e) => setNewSlotStart(e.target.value)}
+                      className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:ring-4 focus:ring-blue-500/10 focus:border-blue-750 text-slate-800 focus:outline-none font-medium"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-[80px] space-y-1">
+                    <span className="block text-[9px] font-bold text-slate-700 uppercase tracking-widest font-sans">Giờ Kết Thúc</span>
+                    <input
+                      id="timeslot-end-time"
+                      type="time"
+                      value={newSlotEnd}
+                      onChange={(e) => setNewSlotEnd(e.target.value)}
+                      className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:ring-4 focus:ring-blue-500/10 focus:border-blue-750 text-slate-800 focus:outline-none font-medium"
+                    />
+                  </div>
+                  <button
+                    id="btn-add-timeslot"
+                    type="submit"
+                    className="px-3.5 py-2 hover:bg-blue-950 text-white text-xs font-bold bg-blue-900 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm shrink-0 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-white" />
+                    <span>Kích hoạt ca</span>
+                  </button>
+                </form>
+              </div>
+            )}
 
             {/* Responsive grid system exhibiting active slots with deletion options */}
             <div className="p-6">
@@ -620,15 +729,17 @@ export default function AdminDashboard({
                       className="group relative p-3 bg-white border border-slate-200 hover:border-slate-350 rounded-lg flex items-center justify-between font-mono text-xs text-slate-800 shadow-sm transition-all"
                     >
                       <span className="font-semibold">{slot.time}</span>
-                      <button
-                        id={`del-slot-${slot.id}`}
-                        type="button"
-                        onClick={() => onDeleteTimeSlot(slot.id)}
-                        title="Xóa ca giờ này"
-                        className="opacity-0 group-hover:opacity-100 p-1 bg-red-50 hover:bg-red-100 text-red-500 rounded-md transition-all cursor-pointer border border-red-200/20"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
+                      {isAdminUser && (
+                        <button
+                          id={`del-slot-${slot.id}`}
+                          type="button"
+                          onClick={() => onDeleteTimeSlot(slot.id)}
+                          title="Xóa ca giờ này"
+                          className="opacity-0 group-hover:opacity-100 p-1 bg-red-50 hover:bg-red-100 text-red-500 rounded-md transition-all cursor-pointer border border-red-200/20"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </motion.div>
                   ))}
                 </AnimatePresence>
@@ -642,6 +753,84 @@ export default function AdminDashboard({
         </div>
 
       </div>
+
+      {/* 4.5. DOCTOR MANAGEMENT CARD (ADMIN ONLY) */}
+      {isAdminUser && (
+        <div id="doctor-management-card" className="bg-white rounded-xl border border-slate-200/80 shadow-md overflow-hidden">
+          <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 bg-emerald-50 text-emerald-950 rounded-lg border border-emerald-100">
+                <Users className="w-5 h-5 text-emerald-800" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 text-base">Danh Sách Bác Sĩ Hệ Thống</h3>
+                <p className="text-[11px] text-slate-500">Quản lý tài khoản cán bộ bác sĩ chuyên trách trong phòng khám</p>
+              </div>
+            </div>
+            <button
+              id="btn-add-doctor-shortcut"
+              type="button"
+              onClick={() => setIsDoctorModalOpen(true)}
+              className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 hover:text-emerald-800 cursor-pointer"
+            >
+              <Plus className="w-4 h-4 text-emerald-600" />
+              <span>Thêm bác sĩ mới</span>
+            </button>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left font-sans text-xs min-w-[700px]">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold tracking-wider uppercase">
+                  <th className="p-3 pl-6">Họ và tên bác sĩ</th>
+                  <th className="p-3">Tên tài khoản</th>
+                  <th className="p-3">Email liên hệ</th>
+                  <th className="p-3">Số điện thoại</th>
+                  <th className="p-3 pr-6 text-right font-bold">Xóa</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-150 text-slate-800">
+                {doctors.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-6 text-center text-slate-400 italic">
+                      Chưa có tài khoản bác sĩ nào được đăng ký.
+                    </td>
+                  </tr>
+                ) : (
+                  doctors.map((doc) => (
+                    <tr key={doc.id} id={`doctor-row-${doc.id}`} className="hover:bg-slate-50">
+                      <td className="p-3 pl-6 font-bold text-slate-900 flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100 flex items-center justify-center font-bold text-xs uppercase shadow-sm">
+                          {doc.fullName.split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase() || 'BS'}
+                        </div>
+                        <span>{doc.fullName}</span>
+                      </td>
+                      <td className="p-3 font-mono text-slate-650">{doc.username}</td>
+                      <td className="p-3 text-slate-600">{doc.email}</td>
+                      <td className="p-3 font-mono text-slate-600">{doc.phone || 'Chưa cập nhật'}</td>
+                      <td className="p-3 pr-6 text-right">
+                        <button
+                          id={`del-doctor-${doc.id}`}
+                          type="button"
+                          onClick={() => handleDeleteDoctor(doc.id)}
+                          title="Xóa tài khoản bác sĩ"
+                          className="p-1.5 hover:bg-red-50 text-red-500 hover:text-red-750 border border-slate-250 hover:border-red-600 rounded-lg transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+          
+          <div className="p-4 bg-slate-50 border-t border-slate-200 text-[10px] text-slate-550 italic">
+            * Lưu ý: Khi xóa tài khoản bác sĩ, các thông tin liên kết như lịch hẹn hiện tại vẫn được bảo lưu, nhưng bác sĩ sẽ không thể đăng nhập vào hệ thống điều hành.
+          </div>
+        </div>
+      )}
 
       {/* 5. ADD SERVICE CREATION FORM MODAL */}
       <AnimatePresence>
@@ -780,6 +969,126 @@ export default function AdminDashboard({
                     className="px-5 py-2 bg-blue-900 hover:bg-blue-950 text-white text-xs font-bold rounded-lg transition-colors shadow-sm cursor-pointer"
                   >
                     Xác nhận & Cập nhật
+                  </button>
+                </div>
+
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 5.5. ADD DOCTOR CREATION FORM MODAL (ADMIN ONLY) */}
+      <AnimatePresence>
+        {isDoctorModalOpen && (
+          <div id="doctor-modal-overlay" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <motion.div
+              id="doctor-modal-card"
+              initial={{ opacity: 0, scale: 0.97 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.97 }}
+              className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden"
+            >
+              <div className="p-6 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Users className="w-5 h-5 text-emerald-850" />
+                  <h3 className="font-bold text-slate-900 text-base">Thêm Tài Khoản Bác Sĩ Mới</h3>
+                </div>
+                <button
+                  id="doctor-modal-close-btn"
+                  type="button"
+                  onClick={() => { setIsDoctorModalOpen(false); setDoctorErrors({}); }}
+                  className="p-1 hover:bg-slate-200 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form id="create-doctor-form" onSubmit={handleCreateDoctor} className="p-6 space-y-4">
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-widest">Tên đăng nhập</label>
+                    <input
+                      id="field-doc-username"
+                      type="text"
+                      placeholder="vd: bsdavid"
+                      value={newDocUsername}
+                      onChange={(e) => setNewDocUsername(e.target.value)}
+                      className="w-full bg-white border border-slate-300 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-700 text-slate-800 font-medium"
+                    />
+                    {doctorErrors.username && <p className="text-[10px] text-red-500 font-bold">{doctorErrors.username}</p>}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-widest">Mật khẩu (tối thiểu 6 ký tự)</label>
+                    <input
+                      id="field-doc-password"
+                      type="password"
+                      placeholder="******"
+                      value={newDocPassword}
+                      onChange={(e) => setNewDocPassword(e.target.value)}
+                      className="w-full bg-white border border-slate-300 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-700 text-slate-800"
+                    />
+                    {doctorErrors.password && <p className="text-[10px] text-red-500 font-bold">{doctorErrors.password}</p>}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-widest">Họ và tên bác sĩ</label>
+                  <input
+                    id="field-doc-fullname"
+                    type="text"
+                    placeholder="Ví dụ: BS. Arthur Rain"
+                    value={newDocFullName}
+                    onChange={(e) => setNewDocFullName(e.target.value)}
+                    className="w-full bg-white border border-slate-300 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-700 text-slate-800 font-semibold"
+                  />
+                  {doctorErrors.fullName && <p className="text-[10px] text-red-500 font-bold">{doctorErrors.fullName}</p>}
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-widest">Email liên hệ</label>
+                    <input
+                      id="field-doc-email"
+                      type="email"
+                      placeholder="arthur@rainclinic.med"
+                      value={newDocEmail}
+                      onChange={(e) => setNewDocEmail(e.target.value)}
+                      className="w-full bg-white border border-slate-300 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-700 text-slate-800"
+                    />
+                    {doctorErrors.email && <p className="text-[10px] text-red-500 font-bold">{doctorErrors.email}</p>}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-widest">Số điện thoại</label>
+                    <input
+                      id="field-doc-phone"
+                      type="text"
+                      placeholder="Số điện thoại di động"
+                      value={newDocPhone}
+                      onChange={(e) => setNewDocPhone(e.target.value)}
+                      className="w-full bg-white border border-slate-300 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-700 text-slate-800"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-slate-200 style-form-action flex justify-end gap-3 bg-slate-50 -mx-6 -mb-6 p-4">
+                  <button
+                    id="btn-cancel-doc-modal"
+                    type="button"
+                    onClick={() => { setIsDoctorModalOpen(false); setDoctorErrors({}); }}
+                    className="px-4 py-2 hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-lg transition-colors cursor-pointer border border-slate-300 bg-white"
+                  >
+                    Hủy bỏ
+                  </button>
+                  <button
+                    id="btn-confirm-doc-modal"
+                    type="submit"
+                    className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-lg transition-colors shadow-sm cursor-pointer"
+                  >
+                    Thêm bác sĩ
                   </button>
                 </div>
 

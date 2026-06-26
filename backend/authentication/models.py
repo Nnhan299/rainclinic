@@ -99,19 +99,19 @@ class Appointment(models.Model):
     patient = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name='appointments',
+        related_name='auth_appointments',
         verbose_name='Bệnh nhân'
     )
     service = models.ForeignKey(
         Service,
         on_delete=models.CASCADE,
-        related_name='appointments',
+        related_name='auth_appointments',
         verbose_name='Dịch vụ'
     )
     time_slot = models.ForeignKey(
         TimeSlot,
         on_delete=models.CASCADE,
-        related_name='appointments',
+        related_name='auth_appointments',
         verbose_name='Khung giờ'
     )
     date = models.DateField(verbose_name='Ngày khám')

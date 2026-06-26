@@ -24,6 +24,8 @@ export default function Navbar({
   onLogout,
 }: NavbarProps) {
   const isAdmin = currentUser !== null && currentUser.role === 'admin';
+  const isDoctor = currentUser !== null && currentUser.role === 'doctor';
+  const hasAdminAccess = isAdmin || isDoctor;
 
   return (
     <header id="sticky-header" className="sticky top-0 z-40 w-full mb-6 py-0 px-8 bg-blue-900 text-white shadow-lg shrink-0 h-16 flex items-center">
@@ -41,7 +43,7 @@ export default function Navbar({
           </div>
         </div>
 
-        {/* Persistence navigation tabs centered or grouped */}
+        {/* Navigation tabs */}
         <nav id="nav-navigation" className="flex h-full items-center">
           
           {/* ĐĂNG NHẬP / ĐĂNG KÝ: Chỉ hiển thị khi chưa đăng nhập */}
@@ -61,23 +63,25 @@ export default function Navbar({
             </button>
           )}
 
-          {/* CỔNG BỆNH NHÂN: Hiển thị cho cả bệnh nhân, admin hoặc khi chưa đăng nhập */}
-          <button
-            id="nav-tab-patient"
-            type="button"
-            onClick={() => onChangeTab('patient')}
-            className={`px-5 h-16 text-xs md:text-sm font-semibold transition-all flex items-center gap-1.5 cursor-pointer border-b-2 ${
-              currentTab === 'patient'
-                ? 'border-teal-400 bg-blue-800/40 text-white'
-                : 'border-transparent text-blue-100 opacity-60 hover:opacity-100'
-            }`}
-          >
-            <Stethoscope className="w-3.5 h-3.5" />
-            <span>CỔNG BỆNH NHÂN</span>
-          </button>
+          {/* CỔNG BỆNH NHÂN: Hiển thị cho cả bệnh nhân, admin hoặc khi chưa đăng nhập (Không hiển thị cho bác sĩ) */}
+          {!isDoctor && (
+            <button
+              id="nav-tab-patient"
+              type="button"
+              onClick={() => onChangeTab('patient')}
+              className={`px-5 h-16 text-xs md:text-sm font-semibold transition-all flex items-center gap-1.5 cursor-pointer border-b-2 ${
+                currentTab === 'patient'
+                  ? 'border-teal-400 bg-blue-800/40 text-white'
+                  : 'border-transparent text-blue-100 opacity-60 hover:opacity-100'
+              }`}
+            >
+              <Stethoscope className="w-3.5 h-3.5" />
+              <span>CỔNG BỆNH NHÂN</span>
+            </button>
+          )}
 
-          {/* QUẢN TRỊ VIÊN: Chỉ hiển thị cho Admin */}
-          {isAdmin && (
+          {/* QUẢN TRỊ VIÊN: Hiển thị cho Admin và Bác sĩ */}
+          {hasAdminAccess && (
             <button
               id="nav-tab-admin"
               type="button"
@@ -89,7 +93,7 @@ export default function Navbar({
               }`}
             >
               <ShieldAlert className="w-3.5 h-3.5" />
-              <span>QUẢN TRỊ VIÊN</span>
+              <span>{isDoctor ? 'CỔNG BÁC SĨ' : 'QUẢN TRỊ VIÊN'}</span>
             </button>
           )}
         </nav>
@@ -100,7 +104,7 @@ export default function Navbar({
             <div className="flex items-center gap-3">
               <div className="flex flex-col items-end">
                 <span className="text-[10px] text-blue-200 uppercase tracking-wider font-semibold">
-                  {currentUser.role === 'admin' ? 'Quản trị viên' : 'Bệnh nhân'}
+                  {currentUser.role === 'admin' ? 'Quản trị viên' : (currentUser.role === 'doctor' ? 'Bác sĩ' : 'Bệnh nhân')}
                 </span>
                 <span className="text-sm font-medium text-white">{currentUser.fullName}</span>
               </div>

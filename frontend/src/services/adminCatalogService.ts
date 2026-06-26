@@ -21,8 +21,7 @@ const client = axios.create({
 client.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = getAuthToken();
   if (token) {
-    config.headers = config.headers || {};
-    config.headers['Authorization'] = `Bearer ${token}`;
+    (config.headers as any)['Authorization'] = `Bearer ${token}`;
   }
   return config;
 });
@@ -185,5 +184,35 @@ export const adminCatalogService = {
   deleteAppointment: async (id: string) => {
     await client.delete(`/appointments/${id}/delete/`);
     return { success: true };
+  },
+
+  // ==================== QUẢN LÝ BÁC SĨ (ADMIN ONLY) ====================
+  getAllDoctors: async () => {
+    const token = getAuthToken();
+    const response = await axios.get(`${AUTH_URL}/users/?role=doctor`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    // Trả về danh sách user bác sĩ
+    return response.data.results || response.data || [];
+  },
+
+  createDoctor: async (doctorData: any) => {
+    const response = await axios.post(`${AUTH_URL}/register/`, {
+      ...doctorData,
+      role: 'doctor'
+    });
+    return response.data.user;
+  },
+
+  deleteDoctor: async (id: number | string) => {
+    const token = getAuthToken();
+    await axios.delete(`${AUTH_URL}/users/${id}/`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    return true;
   },
 };

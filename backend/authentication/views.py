@@ -27,7 +27,7 @@ from .serializers import (
     TimeSlotSerializer,
     AppointmentSerializer,
 )
-from .permissions import IsAdminRole, IsOwnerOrAdmin
+from .permissions import IsAdminRole, IsOwnerOrAdmin, IsAdminOrDoctor
 from .models import Service, TimeSlot, Appointment
 
 User = get_user_model()
@@ -322,7 +322,7 @@ class AdminAppointmentListView(generics.ListAPIView):
     Danh sách toàn bộ lịch hẹn kèm bộ lọc theo ngày và trạng thái.
     """
     serializer_class = AppointmentSerializer
-    permission_classes = [IsAuthenticated, IsAdminRole]
+    permission_classes = [IsAuthenticated, IsAdminOrDoctor]
 
     def get_queryset(self):
         queryset = Appointment.objects.all()
@@ -343,7 +343,7 @@ class ConfirmAppointmentView(generics.UpdateAPIView):
     """
     queryset = Appointment.objects.all()
     serializer_class = AppointmentSerializer
-    permission_classes = [IsAuthenticated, IsAdminRole]
+    permission_classes = [IsAuthenticated, IsAdminOrDoctor]
 
     def update(self, request, *args, **kwargs):
         appointment = self.get_object()

@@ -57,9 +57,9 @@ class Appointment(models.Model):
         ('cancelled', 'Hủy lịch'),
     ]
 
-    patient = models.ForeignKey(User, on_delete=models.CASCADE, related_name='appointments', verbose_name="Bệnh nhân")
-    service = models.ForeignKey(MedicalService, on_delete=models.CASCADE, related_name='appointments', verbose_name="Dịch vụ")
-    time_slot = models.ForeignKey(TimeSlot, on_delete=models.CASCADE, related_name='appointments', verbose_name="Khung giờ")
+    patient = models.ForeignKey(User, on_delete=models.CASCADE, related_name='catalog_appointments', verbose_name="Bệnh nhân")
+    service = models.ForeignKey(MedicalService, on_delete=models.CASCADE, related_name='catalog_appointments', verbose_name="Dịch vụ")
+    time_slot = models.ForeignKey(TimeSlot, on_delete=models.CASCADE, related_name='catalog_appointments', verbose_name="Khung giờ")
     appointment_date = models.DateField(verbose_name="Ngày khám")
     symptoms = models.TextField(blank=True, default="", verbose_name="Triệu chứng")
     notes = models.TextField(blank=True, default="", verbose_name="Ghi chú")

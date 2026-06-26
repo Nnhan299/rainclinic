@@ -12,7 +12,7 @@ class Appointment(models.Model):
     patient = models.ForeignKey(
         settings.AUTH_USER_MODEL, 
         on_delete=models.CASCADE, 
-        related_name='appointments'
+        related_name='admin_appointments'
     )
     
     # Lưu thông tin cơ bản để chạy độc lập

@@ -51,7 +51,7 @@ export default function App() {
 
   const fetchBackendAppointments = async () => {
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/admin/appointments/', {
+      const response = await fetch('http://localhost:8000/api/admin/appointments/', {
         headers: { 'Content-Type': 'application/json' }
       });
       if (!response.ok) throw new Error('Lỗi mạng');
@@ -99,7 +99,7 @@ export default function App() {
     if (savedUser) {
       try {
         const u = JSON.parse(savedUser) as User;
-        return u.role === 'admin' ? 'admin' : 'patient';
+        return (u.role === 'admin' || u.role === 'doctor') ? 'admin' : 'patient';
       } catch {}
     }
     return 'auth'; // Bắt đầu ở trang đăng nhập/đăng ký nếu chưa đăng nhập
@@ -226,7 +226,7 @@ export default function App() {
     setCurrentUser(user);
     
     // Chỉ giữ lại check user.role chuẩn theo interface User của bạn
-    if (user.role === 'admin') {
+    if (user.role === 'admin' || user.role === 'doctor') {
       setCurrentTab('admin');
     } else {
       setCurrentTab('patient');
@@ -479,7 +479,7 @@ export default function App() {
                 id="view-admin"
               >
                 {/* Fallback to Admin verification warning */}
-                {(!currentUser || currentUser.role !== 'admin') && (
+                {(!currentUser || (currentUser.role !== 'admin' && currentUser.role !== 'doctor')) && (
                   <div className="bg-white rounded-xl p-12 text-center border border-slate-200 shadow-md max-w-lg mx-auto space-y-6">
                     <div className="w-16 h-16 bg-red-50 border border-red-100 rounded-full flex items-center justify-center text-red-600 mx-auto animate-pulse">
                       <ShieldAlert className="w-8 h-8" />
@@ -504,8 +504,9 @@ export default function App() {
                   </div>
                 )}
 
-                {currentUser && currentUser.role === 'admin' && (
+                {currentUser && (currentUser.role === 'admin' || currentUser.role === 'doctor') && (
                   <AdminDashboard
+                    currentUser={currentUser}
                     services={services}
                     timeSlots={timeSlots}
                     appointments={combinedAppointments}
