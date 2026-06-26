@@ -18,7 +18,7 @@ interface PatientPortalProps {
     date: string;
     timeSlot: string;
     symptoms: string;
-  }) => void;
+  }) => Promise<boolean>;
   onCancelAppointment: (id: string) => void;
   onShowToast: (msg: string, type: 'success' | 'error' | 'info') => void;
 }
@@ -61,7 +61,7 @@ export default function PatientPortal({
     );
   };
 
-  const handleBookingSubmit = (e: React.FormEvent) => {
+  const handleBookingSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!selectedServiceId) {
@@ -87,17 +87,18 @@ export default function PatientPortal({
       return;
     }
 
-    onBookAppointment({
+    const success = await onBookAppointment({
       serviceId: selectedServiceId,
       date: selectedDate,
       timeSlot: selectedTimeSlot,
       symptoms: symptoms.trim(),
     });
 
-    // Reset slot + symptoms on successful booking
-    setSelectedTimeSlot('');
-    setSymptoms('');
-    onShowToast('Yêu cầu đặt lịch của bạn đã được tiếp nhận! Đang chờ quản trị viên duyệt.', 'success');
+    if (success) {
+      setSelectedTimeSlot('');
+      setSymptoms('');
+      onShowToast('Yêu cầu đặt lịch của bạn đã được tiếp nhận! Đang chờ quản trị viên duyệt.', 'success');
+    }
   };
 
   return (

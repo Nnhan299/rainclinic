@@ -62,7 +62,6 @@ class User(AbstractUser):
         """Distinguish from Django's is_staff/is_superuser."""
         return self.role == self.Role.ADMIN
 
-
 class Service(models.Model):
     name = models.CharField(max_length=100, verbose_name='Tên dịch vụ')
     category = models.CharField(max_length=100, verbose_name='Chuyên khoa')

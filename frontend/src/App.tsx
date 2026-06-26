@@ -11,12 +11,13 @@ import {
 } from 'lucide-react';
 
 import { User, MedicalService, TimeSlot, Appointment } from './types';
-import { 
-  DEFAULT_SERVICES, 
-  DEFAULT_TIME_SLOTS, 
-  DEFAULT_USERS, 
-  DEFAULT_APPOINTMENTS 
+import {
+  DEFAULT_SERVICES,
+  DEFAULT_TIME_SLOTS,
+  DEFAULT_USERS,
+  DEFAULT_APPOINTMENTS,
 } from './data/mockData';
+import { adminCatalogService } from './services/adminCatalogService';
 
 import Navbar from './components/Navbar';
 import AuthModule from './components/AuthModule';
@@ -30,9 +31,6 @@ interface Toast {
 }
 
 export default function App() {
-  // ----------------------------------------------------
-  // LOCAL STORAGE PERSISTENCE MANAGERS
-  // ----------------------------------------------------
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('rc_current_user');
     if (saved) {
@@ -45,29 +43,9 @@ export default function App() {
     return null;
   });
 
-  const [services, setServices] = useState<MedicalService[]>(() => {
-    const saved = localStorage.getItem('rc_services');
-    if (saved) {
-      try { return JSON.parse(saved); } catch {}
-    }
-    return DEFAULT_SERVICES;
-  });
-
-  const [timeSlots, setTimeSlots] = useState<TimeSlot[]>(() => {
-    const saved = localStorage.getItem('rc_timeslots');
-    if (saved) {
-      try { return JSON.parse(saved); } catch {}
-    }
-    return DEFAULT_TIME_SLOTS;
-  });
-
-  const [appointments, setAppointments] = useState<Appointment[]>(() => {
-    const saved = localStorage.getItem('rc_appointments');
-    if (saved) {
-      try { return JSON.parse(saved); } catch {}
-    }
-    return DEFAULT_APPOINTMENTS;
-  });
+  const [services, setServices] = useState<MedicalService[]>(DEFAULT_SERVICES);
+  const [timeSlots, setTimeSlots] = useState<TimeSlot[]>(DEFAULT_TIME_SLOTS);
+  const [appointments, setAppointments] = useState<Appointment[]>(DEFAULT_APPOINTMENTS);
 
   const [currentTab, setCurrentTab] = useState<'auth' | 'patient' | 'admin'>(() => {
     const savedUser = localStorage.getItem('rc_current_user');
@@ -80,109 +58,9 @@ export default function App() {
     return 'auth'; // Bắt đầu ở trang đăng nhập/đăng ký nếu chưa đăng nhập
   });
 
-  // Toasts notification pipeline
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  // ----------------------------------------------------
-  // API UTILITY & SYNC EFFECT HOOKS
-  // ----------------------------------------------------
-  const API_BASE = 'http://localhost:8000/api';
 
-  const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
-    const token = localStorage.getItem('rc_access_token');
-    const headers = {
-      'Content-Type': 'application/json',
-      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-      ...options.headers,
-    };
-
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-      ...options,
-      headers,
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || errorData.detail || 'Có lỗi xảy ra');
-    }
-
-    return response.json();
-  };
-
-  // Fetch Services & Time Slots on mount
-  useEffect(() => {
-    const loadInitialData = async () => {
-      try {
-        const servicesData = await apiRequest('/services/');
-        if (Array.isArray(servicesData)) {
-          setServices(servicesData.map((s: any) => ({
-            id: s.id.toString(),
-            name: s.name,
-            category: s.category,
-            durationMin: s.duration_min,
-            price: s.price,
-            doctorName: s.doctor_name,
-            description: s.description,
-          })));
-        }
-      } catch (err) {
-        console.warn('Backend services not accessible, using mock data.', err);
-      }
-
-      try {
-        const slotsData = await apiRequest('/time-slots/');
-        if (Array.isArray(slotsData)) {
-          setTimeSlots(slotsData.map((slot: any) => ({
-            id: slot.id.toString(),
-            time: slot.time,
-            isAvailable: slot.is_available,
-          })));
-        }
-      } catch (err) {
-        console.warn('Backend time slots not accessible, using mock data.', err);
-      }
-    };
-
-    loadInitialData();
-  }, []);
-
-  // Fetch Appointments when user logs in
-  useEffect(() => {
-    if (!currentUser) {
-      setAppointments([]);
-      return;
-    }
-
-    const loadAppointments = async () => {
-      try {
-        const aptsData = await apiRequest('/appointments/');
-        if (Array.isArray(aptsData)) {
-          setAppointments(aptsData.map((apt: any) => ({
-            id: apt.id.toString(),
-            patientId: apt.patientId,
-            patientName: apt.patientName,
-            patientPhone: apt.patientPhone,
-            serviceId: apt.serviceId,
-            serviceName: apt.serviceName,
-            doctorName: apt.doctorName,
-            date: apt.date,
-            timeSlot: apt.timeSlot,
-            symptoms: apt.symptoms,
-            status: apt.status,
-            createdAt: apt.createdAt,
-          })));
-        }
-      } catch (err) {
-        console.warn('Backend appointments not accessible.', err);
-      }
-    };
-
-    loadAppointments();
-  }, [currentUser]);
-
-  // ----------------------------------------------------
-  // WRITE STORAGE UPDATES TO LOCAL STORAGE
-  // ----------------------------------------------------
   useEffect(() => {
     if (currentUser) {
       localStorage.setItem('rc_current_user', JSON.stringify(currentUser));
@@ -192,42 +70,115 @@ export default function App() {
   }, [currentUser]);
 
   useEffect(() => {
-    localStorage.setItem('rc_services', JSON.stringify(services));
-  }, [services]);
+    const loadCatalogData = async () => {
+      try {
+        const [serviceResult, slotResult, appointmentResult] = await Promise.allSettled([
+          adminCatalogService.getAllServices(),
+          adminCatalogService.getAllTimeSlots(),
+          currentUser ? adminCatalogService.getAllAppointments() : Promise.resolve([]),
+        ]);
 
-  useEffect(() => {
-    localStorage.setItem('rc_timeslots', JSON.stringify(timeSlots));
-  }, [timeSlots]);
+        // Nếu lỗi không lấy được từ DB, để mảng rỗng chứ không lấy dữ liệu giả đè lên
+        if (serviceResult.status === 'fulfilled' && Array.isArray(serviceResult.value)) {
+          setServices(serviceResult.value.map(mapServiceFromApi));
+        } else {
+          console.error('Lỗi tải dịch vụ:', serviceResult.status === 'rejected' ? serviceResult.reason : 'Sai format');
+          setServices([]); // Trả về mảng rỗng để dễ debug lỗi API
+        }
 
-  useEffect(() => {
-    localStorage.setItem('rc_appointments', JSON.stringify(appointments));
-  }, [appointments]);
+        if (slotResult.status === 'fulfilled' && Array.isArray(slotResult.value)) {
+          setTimeSlots(slotResult.value.map(mapTimeSlotFromApi));
+        } else {
+          console.error('Lỗi tải khung giờ:', slotResult.status === 'rejected' ? slotResult.reason : 'Sai format');
+          setTimeSlots([]);
+        }
+
+        if (appointmentResult.status === 'fulfilled' && Array.isArray(appointmentResult.value)) {
+          setAppointments(appointmentResult.value.map(mapAppointmentFromApi));
+        } else {
+          setAppointments([]);
+        }
+      } catch (error) {
+        console.error('Không thể tải dữ liệu từ backend:', error);
+      }
+    };
+
+    loadCatalogData();
+  }, [currentUser]);
 
   // ----------------------------------------------------
   // TOAST EMITTER UTILITY
   // ----------------------------------------------------
   const handleShowToast = (message: string, type: 'success' | 'error' | 'info') => {
     const newId = `toast-${Date.now()}-${Math.random()}`;
-    setToasts((prev) => [...prev, { id: newId, message, type }]);
+    setToasts((prev: Toast[]) => [...prev, { id: newId, message, type }]);
 
     // Auto-destruct toast after 4000ms
     setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== newId));
+      setToasts((prev: Toast[]) => prev.filter((t: Toast) => t.id !== newId));
     }, 4000);
   };
 
   const removeToast = (id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
+    setToasts((prev: Toast[]) => prev.filter((t: Toast) => t.id !== id));
   };
+
+  const mapServiceFromApi = (item: any): MedicalService => ({
+    id: String(item.id),
+    // Ưu tiên các key tiếng Việt/Snake case từ Django API trả về
+    name: item.ten_dich_vu || item.name || '',
+    category: item.danh_muc || item.category || 'Wellness & General',
+    durationMin: Number(item.thoi_luong || item.duration_minutes || item.durationMin || 30),
+    price: Number(item.gia_tien || item.price || 0),
+    description: item.mo_ta || item.description || '',
+    doctorName: item.ten_bac_si || item.doctor_name || item.doctorName || 'BS. Đang cập nhật',
+  });
+
+  const mapTimeSlotFromApi = (item: any): TimeSlot => {
+    // Hỗ trợ cả trường tiếng Việt từ Model Django
+    const start = item.gio_bat_dau || item.start_time || item.startTime || '';
+    const end = item.gio_ket_thuc || item.end_time || item.endTime || '';
+    
+    let timeLabel = item.time || '';
+    if (start && end) {
+      timeLabel = `${String(start).slice(0, 5)} - ${String(end).slice(0, 5)}`;
+    }
+    
+    return {
+      id: String(item.id),
+      time: timeLabel,
+      // Django BooleanField thường đặt tên dạng snake_case
+      isAvailable: item.is_available ?? item.is_active ?? item.isAvailable ?? true,
+    };
+  };
+
+  const mapAppointmentFromApi = (item: any): Appointment => ({
+    id: String(item.id),
+    patientId: String(item.patient ?? item.patientId ?? ''),
+    patientName: item.patient_name || item.patientName || '',
+    patientPhone: item.patient_phone || item.patientPhone || '',
+    serviceId: String(item.service ?? item.serviceId ?? ''),
+    serviceName: item.service_name || item.serviceName || '',
+    doctorName: item.doctor_name || item.doctorName || '',
+    date: item.appointment_date || item.date || '',
+    timeSlot: item.time_slot_display || item.timeSlot || '',
+    symptoms: item.symptoms || '',
+    status: item.status === 'canceled' ? 'cancelled' : item.status || 'pending',
+    createdAt: item.created_at || item.createdAt || '',
+  });
 
   // ----------------------------------------------------
   // CORE WORKFLOW HANDLERS
   // ----------------------------------------------------
 
-  // USER MANAGEMENT
+  // ==================== USER MANAGEMENT ====================
+  
+  // Xử lý đăng nhập thành công - Nhận thông tin User từ AuthModule
   const handleLogin = (user: User) => {
+    // AuthModule đã xác thực thành công và lưu tokens vào localStorage
     setCurrentUser(user);
-    // Auto shift tab based on role
+    
+    // Chỉ giữ lại check user.role chuẩn theo interface User của bạn
     if (user.role === 'admin') {
       setCurrentTab('admin');
     } else {
@@ -235,17 +186,30 @@ export default function App() {
     }
   };
 
+  // Xử lý đăng ký tài khoản mới thành công
   const handleRegister = (newUser: User) => {
-    // We register but also automatically login as this user
+    // Tự động đăng nhập và đưa bệnh nhân vào phân hệ quản lý cá nhân
     setCurrentUser(newUser);
+    setCurrentTab('patient');
   };
 
+  // Xử lý đăng xuất hệ thống
   const handleLogout = () => {
+    // 1. Reset sạch trạng thái UI về màn hình Auth ban đầu
     setCurrentUser(null);
     setCurrentTab('auth');
-    localStorage.removeItem('rc_access_token');
-    localStorage.removeItem('rc_refresh_token');
-    localStorage.removeItem('rc_is_admin');
+    
+    // 2. DỌN SẠCH TẤT CẢ các biến thể key token có thể tồn tại trong LocalStorage
+    const tokensToClear = [
+      'rc_access_token',
+      'rc_refresh_token',
+      'rc_is_admin',
+      'access_token',
+      'refresh_token'
+    ];
+    tokensToClear.forEach(key => localStorage.removeItem(key));
+    
+    // 3. Thông báo cho người dùng
     handleShowToast('Đã đăng xuất khỏi phiên làm việc RainClinic.', 'info');
   };
 
@@ -257,141 +221,127 @@ export default function App() {
     timeSlot: string;
     symptoms: string;
   }) => {
-    const selectedService = services.find((s) => s.id === bookingData.serviceId);
-    if (!selectedService || !currentUser) return;
-
-    // Find the slot id by time string
-    const selectedSlotObj = timeSlots.find((t) => t.time === bookingData.timeSlot);
-    if (!selectedSlotObj) {
-      handleShowToast('Không tìm thấy khung giờ phù hợp.', 'error');
-      return;
+    const selectedService = services.find((s: MedicalService) => String(s.id) === String(bookingData.serviceId));
+    if (!selectedService || !currentUser) {
+      handleShowToast('Không tìm thấy dịch vụ tương ứng hoặc bạn chưa đăng nhập.', 'error');
+      return false;
     }
 
-    const rawServiceId = selectedService.id.startsWith('srv-')
-      ? selectedService.id.replace('srv-', '')
-      : selectedService.id;
+    // Tìm khung giờ: Đảm bảo trường so sánh khớp nhau (ví dụ: cùng là slot.id hoặc slot.time)
+    const selectedTimeSlot = timeSlots.find((slot: TimeSlot) => slot.time === bookingData.timeSlot);
+    
+    const serviceId = Number(selectedService.id);
+    const timeSlotId = Number(selectedTimeSlot?.id);
 
-    const rawSlotId = selectedSlotObj.id.startsWith('ts-')
-      ? selectedSlotObj.id.replace('ts-', '')
-      : selectedSlotObj.id;
+    // Kiểm tra tính hợp lệ của ID từ DB thực tế
+    if (isNaN(serviceId) || isNaN(timeSlotId)) {
+      handleShowToast('Dữ liệu dịch vụ hoặc khung giờ không hợp lệ (Lỗi ID định dạng chuỗi Mockup).', 'error');
+      return false;
+    }
 
     try {
-      const payload = {
-        service_id: parseInt(rawServiceId),
-        slot_id: parseInt(rawSlotId),
-        date: bookingData.date,
+      const createdAppointment = await adminCatalogService.createAppointment({
+        service: serviceId,
+        time_slot: timeSlotId,
+        appointment_date: bookingData.date,
         symptoms: bookingData.symptoms,
-      };
-
-      const newAptData = await apiRequest('/appointments/book/', {
-        method: 'POST',
-        body: JSON.stringify(payload),
+        notes: '',
       });
 
-      const newAppointment: Appointment = {
-        id: newAptData.id.toString(),
-        patientId: newAptData.patientId,
-        patientName: newAptData.patientName,
-        patientPhone: newAptData.patientPhone,
-        serviceId: newAptData.serviceId,
-        serviceName: newAptData.serviceName,
-        doctorName: newAptData.doctorName,
-        date: newAptData.date,
-        timeSlot: newAptData.timeSlot,
-        symptoms: newAptData.symptoms,
-        status: newAptData.status,
-        createdAt: newAptData.createdAt,
-      };
-
-      setAppointments((prev) => [newAppointment, ...prev]);
-      handleShowToast('Yêu cầu đặt lịch của bạn đã được tiếp nhận! Đang chờ quản trị viên duyệt.', 'success');
-    } catch (err: any) {
-      handleShowToast(err.message || 'Lỗi khi đặt lịch hẹn khám.', 'error');
+      setAppointments((prev: Appointment[]) => [mapAppointmentFromApi(createdAppointment), ...prev]);
+      handleShowToast('Đặt lịch thành công. Dữ liệu đã được lưu vào MySQL.', 'success');
+      return true;
+    } catch (error) {
+      console.error('Không thể đặt lịch:', error);
+      handleShowToast('Không thể kết nối đến máy chủ đặt lịch.', 'error');
+      return false;
     }
   };
 
-  // APPOINTMENT CANCELLATION HANDLER
   const handleCancelAppointment = async (id: string) => {
-    // Handle mock appointments locally
-    if (id.startsWith('apt-')) {
-      setAppointments((prev) =>
-        prev.map((apt) =>
-          apt.id === id ? { ...apt, status: 'cancelled' as const } : apt
-        )
-      );
-      handleShowToast('Yêu cầu đặt lịch hẹn đã được chuyển sang trạng thái HỦY LỊCH (Dữ liệu mẫu).', 'error');
-      return;
-    }
-
     try {
-      await apiRequest(`/appointments/${id}/cancel/`, {
-        method: 'PUT',
-      });
-
-      setAppointments((prev) =>
-        prev.map((apt) =>
+      await adminCatalogService.cancelAppointment(id);
+      setAppointments((prev: Appointment[]) =>
+        prev.map((apt: Appointment) =>
           apt.id === id ? { ...apt, status: 'cancelled' as const } : apt
         )
       );
-      handleShowToast('Yêu cầu đặt lịch hẹn đã được chuyển sang trạng thái HỦY LỊCH.', 'error');
-    } catch (err: any) {
-      handleShowToast(err.message || 'Không thể hủy lịch hẹn.', 'error');
+      handleShowToast('Yêu cầu đặt lịch hẹn đã được chuyển sang trạng thái HỦY LỊCH.', 'success');
+    } catch (error) {
+      console.error('Không thể hủy lịch:', error);
+      handleShowToast('Không thể cập nhật trạng thái lịch hẹn trên máy chủ.', 'error');
     }
   };
 
-  // APPOINTMENT APPROVAL HANDLER
   const handleApproveAppointment = async (id: string) => {
-    // Handle mock appointments locally
-    if (id.startsWith('apt-')) {
-      setAppointments((prev) =>
-        prev.map((apt) =>
-          apt.id === id ? { ...apt, status: 'confirmed' as const } : apt
-        )
-      );
-      handleShowToast('Phê duyệt thành công! Ca hẹn kiểm tra y khoa đã khóa giờ thành công (Dữ liệu mẫu).', 'success');
-      return;
-    }
-
     try {
-      await apiRequest(`/admin/appointments/${id}/confirm/`, {
-        method: 'PUT',
-      });
-
-      setAppointments((prev) =>
-        prev.map((apt) =>
+      await adminCatalogService.updateAppointmentStatus(id, 'confirmed');
+      setAppointments((prev: Appointment[]) =>
+        prev.map((apt: Appointment) =>
           apt.id === id ? { ...apt, status: 'confirmed' as const } : apt
         )
       );
       handleShowToast('Phê duyệt thành công! Ca hẹn kiểm tra y khoa đã khóa giờ thành công.', 'success');
-    } catch (err: any) {
-      handleShowToast(err.message || 'Không thể phê duyệt lịch hẹn.', 'error');
+    } catch (error) {
+      console.error('Không thể phê duyệt lịch:', error);
+      handleShowToast('Không thể phê duyệt lịch hẹn.', 'error');
     }
   };
 
-  // SERVICE MANAGEMENT HANDLERS
-  const handleAddService = (newService: MedicalService) => {
-    setServices((prev) => [...prev, newService]);
+  const handleAddService = async (newService: MedicalService) => {
+    try {
+      const createdService = await adminCatalogService.createService({
+        name: newService.name,
+        description: newService.description,
+        category: newService.category,
+        price: newService.price,
+        doctor_name: newService.doctorName,
+        duration_minutes: newService.durationMin,
+      });
+      setServices((prev: MedicalService[]) => [mapServiceFromApi(createdService), ...prev]);
+    } catch (error) {
+      console.error('Không thể lưu dịch vụ vào backend:', error);
+      handleShowToast('Không thể lưu dịch vụ vào cơ sở dữ liệu.', 'error');
+    }
   };
 
-  const handleDeleteService = (id: string) => {
-    setServices((prev) => prev.filter((s) => s.id !== id));
-    handleShowToast('Dịch vụ y tế dỡ bỏ khỏi danh sách vận hành hoạt động đầu mối.', 'error');
+  const handleDeleteService = async (id: string) => {
+    try {
+      await adminCatalogService.deleteService(id);
+      setServices((prev: MedicalService[]) => prev.filter((s: MedicalService) => s.id !== id));
+      handleShowToast('Dịch vụ y tế dỡ bỏ khỏi danh sách vận hành hoạt động đầu mối.', 'error');
+    } catch (error) {
+      console.error('Không thể xóa dịch vụ:', error);
+      handleShowToast('Không thể xóa dịch vụ khỏi cơ sở dữ liệu.', 'error');
+    }
   };
 
-  // TIME SLOTS SCHEDULER HANDLERS
-  const handleAddTimeSlot = (time: string) => {
-    const newSlot: TimeSlot = {
-      id: `ts-${Date.now()}`,
-      time,
-      isAvailable: true,
-    };
-    setTimeSlots((prev) => [...prev, newSlot]);
+  const handleAddTimeSlot = async (time: string) => {
+    try {
+      const [startTime, endTime] = time.split('-').map((item) => item.trim());
+      const createdSlot = await adminCatalogService.createTimeSlot({
+        start_time: startTime,
+        end_time: endTime || startTime,
+        is_available: true,
+      });
+      setTimeSlots((prev: TimeSlot[]) => [mapTimeSlotFromApi(createdSlot), ...prev]);
+    } catch (error) {
+      console.error('Không thể lưu khung giờ vào backend:', error);
+      handleShowToast('Không thể lưu khung giờ vào cơ sở dữ liệu.', 'error');
+    }
   };
 
-  const handleDeleteTimeSlot = (id: string) => {
-    setTimeSlots((prev) => prev.filter((s) => s.id !== id));
-    handleShowToast('Đã xóa ca giờ hoạt động tương ứng khỏi bệnh viện.', 'error');
+  const handleDeleteTimeSlot = async (id: string) => {
+    try {
+      await adminCatalogService.deleteTimeSlot(id);
+      setTimeSlots((prev: TimeSlot[]) => prev.filter((s: TimeSlot) => s.id !== id));
+      handleShowToast('Đã xóa ca giờ hoạt động tương ứng khỏi bệnh viện.', 'error');
+    } catch (error) {
+      console.error('Không thể xóa khung giờ:', error);
+      handleShowToast('Không thể xóa khung giờ khỏi cơ sở dữ liệu.', 'error');
+    }
   };
+
 
 
   return (

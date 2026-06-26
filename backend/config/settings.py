@@ -5,7 +5,6 @@ Django settings for RainClinic backend.
 import os
 from pathlib import Path
 from datetime import timedelta
-import dj_database_url
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -44,7 +43,7 @@ INSTALLED_APPS = [
 
     # Local apps
     'authentication',
-    'clinic',
+    'clinic_catalog',
 ]
 
 MIDDLEWARE = [
@@ -80,21 +79,17 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 
 # Database
-# Cấu hình sử dụng PostgreSQL qua DATABASE_URL nếu có, ngược lại fallback về SQLite3
-db_url = os.environ.get('DATABASE_URL')
-if db_url and not db_url.startswith('sqlite'):
-    DATABASES = {
-        'default': dj_database_url.config(
-            default=db_url,
-            conn_max_age=600,
-            conn_health_checks=True,
-        )
-    }
-else:
-    DATABASES = {
+DATABASES = {
         'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
+            'ENGINE': 'django.db.backends.mysql',
+            'NAME': 'rainclinic_db',         
+            'USER': 'root',                   
+            'PASSWORD': 'lehuy173', 
+            'HOST': '127.0.0.1',
+            'PORT': '3306',
+            'OPTIONS': {
+                'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+            },
         }
     }
 
