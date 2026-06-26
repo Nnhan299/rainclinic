@@ -9,7 +9,7 @@ export interface User {
   email: string;
   fullName: string;
   phone: string;
-  role: 'patient' | 'admin';
+  role: 'patient' | 'admin' | 'doctor';
 }
 
 export interface MedicalService {

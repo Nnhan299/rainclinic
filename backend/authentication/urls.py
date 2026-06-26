@@ -13,6 +13,7 @@ urlpatterns = [
     # Đăng ký & Đăng nhập
     path('register/', views.RegisterView.as_view(), name='register'),
     path('login/', views.login_view, name='login'),
+    path('token/', views.CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
 
     # JWT Token refresh
     path('token/refresh/', TokenRefreshView.as_view(), name='token-refresh'),

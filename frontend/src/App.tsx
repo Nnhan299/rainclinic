@@ -11,12 +11,13 @@ import {
 } from 'lucide-react';
 
 import { User, MedicalService, TimeSlot, Appointment } from './types';
-import { 
-  DEFAULT_SERVICES, 
-  DEFAULT_TIME_SLOTS, 
-  DEFAULT_USERS, 
-  DEFAULT_APPOINTMENTS 
+import {
+  DEFAULT_SERVICES,
+  DEFAULT_TIME_SLOTS,
+  DEFAULT_USERS,
+  DEFAULT_APPOINTMENTS,
 } from './data/mockData';
+import { adminCatalogService } from './services/adminCatalogService';
 
 import Navbar from './components/Navbar';
 import AuthModule from './components/AuthModule';
@@ -30,63 +31,83 @@ interface Toast {
 }
 
 export default function App() {
-  // ----------------------------------------------------
-  // LOCAL STORAGE PERSISTENCE MANAGERS
-  // ----------------------------------------------------
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('rc_current_user');
     if (saved) {
       try {
         return JSON.parse(saved);
       } catch {
-        return DEFAULT_USERS[0]; // Jane Doe (Patient)
+        return null;
       }
     }
-    // Default to Patient (Jane Doe) to make it ready-to-test
-    return DEFAULT_USERS[0];
+    return null;
   });
 
-  const [services, setServices] = useState<MedicalService[]>(() => {
-    const saved = localStorage.getItem('rc_services');
-    if (saved) {
-      try { return JSON.parse(saved); } catch {}
-    }
-    return DEFAULT_SERVICES;
-  });
+  const [services, setServices] = useState<MedicalService[]>(DEFAULT_SERVICES);
+  const [timeSlots, setTimeSlots] = useState<TimeSlot[]>(DEFAULT_TIME_SLOTS);
+  const [appointments, setAppointments] = useState<Appointment[]>(DEFAULT_APPOINTMENTS);
 
-  const [timeSlots, setTimeSlots] = useState<TimeSlot[]>(() => {
-    const saved = localStorage.getItem('rc_timeslots');
-    if (saved) {
-      try { return JSON.parse(saved); } catch {}
-    }
-    return DEFAULT_TIME_SLOTS;
-  });
+  const [backendAppointments, setBackendAppointments] = useState<Appointment[]>([]);
 
-  const [appointments, setAppointments] = useState<Appointment[]>(() => {
-    const saved = localStorage.getItem('rc_appointments');
-    if (saved) {
-      try { return JSON.parse(saved); } catch {}
+  const fetchBackendAppointments = async () => {
+    try {
+      const response = await fetch('http://localhost:8000/api/admin/appointments/', {
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (!response.ok) throw new Error('Lỗi mạng');
+      const data = await response.json();
+      
+      const results = data.results || data;
+      if (Array.isArray(results)) {
+        const mapped = results.map((apt: any) => ({
+          id: String(apt.id),
+          patientId: apt.patient_info?.username || 'usr-1',
+          patientName: apt.patient_info?.full_name || 'Bệnh nhân',
+          patientPhone: apt.patient_info?.phone || '',
+          serviceId: 'srv-1',
+          serviceName: apt.service_name || 'Khám sức khỏe',
+          doctorName: 'BS. Evelyn Reed',
+          date: apt.date,
+          timeSlot: apt.time_slot_text || '08:00 - 09:00',
+          symptoms: apt.symptoms || '',
+          status: apt.status as 'pending' | 'confirmed' | 'cancelled',
+          createdAt: apt.created_at || new Date().toISOString()
+        }));
+        setBackendAppointments(mapped);
+      }
+    } catch (error) {
+      console.error("Lỗi lấy dữ liệu API từ Backend:", error);
     }
-    return DEFAULT_APPOINTMENTS;
-  });
+  };
+
+  useEffect(() => {
+    fetchBackendAppointments();
+  }, []);
+
+  const combinedAppointments = React.useMemo(() => {
+    const merged = [...appointments];
+    backendAppointments.forEach((bApt) => {
+      if (!merged.some((a) => String(a.id) === String(bApt.id))) {
+        merged.push(bApt);
+      }
+    });
+    return merged;
+  }, [appointments, backendAppointments]);
 
   const [currentTab, setCurrentTab] = useState<'auth' | 'patient' | 'admin'>(() => {
     const savedUser = localStorage.getItem('rc_current_user');
     if (savedUser) {
       try {
         const u = JSON.parse(savedUser) as User;
-        return u.role === 'admin' ? 'admin' : 'patient';
+        return (u.role === 'admin' || u.role === 'doctor') ? 'admin' : 'patient';
       } catch {}
     }
-    return 'patient'; // Default tab matching user
+    return 'auth'; // Bắt đầu ở trang đăng nhập/đăng ký nếu chưa đăng nhập
   });
 
-  // Toasts notification pipeline
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  // ----------------------------------------------------
-  // WRITE STORAGE UPDATES TO LOCAL STORAGE
-  // ----------------------------------------------------
+
   useEffect(() => {
     if (currentUser) {
       localStorage.setItem('rc_current_user', JSON.stringify(currentUser));
@@ -96,173 +117,279 @@ export default function App() {
   }, [currentUser]);
 
   useEffect(() => {
-    localStorage.setItem('rc_services', JSON.stringify(services));
-  }, [services]);
+    const loadCatalogData = async () => {
+      try {
+        const [serviceResult, slotResult, appointmentResult] = await Promise.allSettled([
+          adminCatalogService.getAllServices(),
+          adminCatalogService.getAllTimeSlots(),
+          currentUser ? adminCatalogService.getAllAppointments() : Promise.resolve([]),
+        ]);
 
-  useEffect(() => {
-    localStorage.setItem('rc_timeslots', JSON.stringify(timeSlots));
-  }, [timeSlots]);
+        // Nếu lỗi không lấy được từ DB, để mảng rỗng chứ không lấy dữ liệu giả đè lên
+        if (serviceResult.status === 'fulfilled' && Array.isArray(serviceResult.value)) {
+          setServices(serviceResult.value.map(mapServiceFromApi));
+        } else {
+          console.error('Lỗi tải dịch vụ:', serviceResult.status === 'rejected' ? serviceResult.reason : 'Sai format');
+          setServices([]); // Trả về mảng rỗng để dễ debug lỗi API
+        }
 
-  useEffect(() => {
-    localStorage.setItem('rc_appointments', JSON.stringify(appointments));
-  }, [appointments]);
+        if (slotResult.status === 'fulfilled' && Array.isArray(slotResult.value)) {
+          setTimeSlots(slotResult.value.map(mapTimeSlotFromApi));
+        } else {
+          console.error('Lỗi tải khung giờ:', slotResult.status === 'rejected' ? slotResult.reason : 'Sai format');
+          setTimeSlots([]);
+        }
+
+        if (appointmentResult.status === 'fulfilled' && Array.isArray(appointmentResult.value)) {
+          setAppointments(appointmentResult.value.map(mapAppointmentFromApi));
+        } else {
+          setAppointments([]);
+        }
+      } catch (error) {
+        console.error('Không thể tải dữ liệu từ backend:', error);
+      }
+    };
+
+    loadCatalogData();
+  }, [currentUser]);
 
   // ----------------------------------------------------
   // TOAST EMITTER UTILITY
   // ----------------------------------------------------
   const handleShowToast = (message: string, type: 'success' | 'error' | 'info') => {
     const newId = `toast-${Date.now()}-${Math.random()}`;
-    setToasts((prev) => [...prev, { id: newId, message, type }]);
+    setToasts((prev: Toast[]) => [...prev, { id: newId, message, type }]);
 
     // Auto-destruct toast after 4000ms
     setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== newId));
+      setToasts((prev: Toast[]) => prev.filter((t: Toast) => t.id !== newId));
     }, 4000);
   };
 
   const removeToast = (id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
+    setToasts((prev: Toast[]) => prev.filter((t: Toast) => t.id !== id));
   };
+
+  const mapServiceFromApi = (item: any): MedicalService => ({
+    id: String(item.id),
+    // Ưu tiên các key tiếng Việt/Snake case từ Django API trả về
+    name: item.ten_dich_vu || item.name || '',
+    category: item.danh_muc || item.category || 'Wellness & General',
+    durationMin: Number(item.thoi_luong || item.duration_minutes || item.durationMin || 30),
+    price: Number(item.gia_tien || item.price || 0),
+    description: item.mo_ta || item.description || '',
+    doctorName: item.ten_bac_si || item.doctor_name || item.doctorName || 'BS. Đang cập nhật',
+  });
+
+  const mapTimeSlotFromApi = (item: any): TimeSlot => {
+    // Hỗ trợ cả trường tiếng Việt từ Model Django
+    const start = item.gio_bat_dau || item.start_time || item.startTime || '';
+    const end = item.gio_ket_thuc || item.end_time || item.endTime || '';
+    
+    let timeLabel = item.time || '';
+    if (start && end) {
+      timeLabel = `${String(start).slice(0, 5)} - ${String(end).slice(0, 5)}`;
+    }
+    
+    return {
+      id: String(item.id),
+      time: timeLabel,
+      // Django BooleanField thường đặt tên dạng snake_case
+      isAvailable: item.is_available ?? item.is_active ?? item.isAvailable ?? true,
+    };
+  };
+
+  const mapAppointmentFromApi = (item: any): Appointment => ({
+    id: String(item.id),
+    patientId: String(item.patient ?? item.patientId ?? ''),
+    patientName: item.patient_name || item.patientName || '',
+    patientPhone: item.patient_phone || item.patientPhone || '',
+    serviceId: String(item.service ?? item.serviceId ?? ''),
+    serviceName: item.service_name || item.serviceName || '',
+    doctorName: item.doctor_name || item.doctorName || '',
+    date: item.appointment_date || item.date || '',
+    timeSlot: item.time_slot_display || item.timeSlot || '',
+    symptoms: item.symptoms || '',
+    status: item.status === 'canceled' ? 'cancelled' : item.status || 'pending',
+    createdAt: item.created_at || item.createdAt || '',
+  });
 
   // ----------------------------------------------------
   // CORE WORKFLOW HANDLERS
   // ----------------------------------------------------
 
-  // USER MANAGEMENT
+  // ==================== USER MANAGEMENT ====================
+  
+  // Xử lý đăng nhập thành công - Nhận thông tin User từ AuthModule
   const handleLogin = (user: User) => {
+    // AuthModule đã xác thực thành công và lưu tokens vào localStorage
     setCurrentUser(user);
-    // Auto shift tab based on role
-    if (user.role === 'admin') {
+    
+    // Chỉ giữ lại check user.role chuẩn theo interface User của bạn
+    if (user.role === 'admin' || user.role === 'doctor') {
       setCurrentTab('admin');
     } else {
       setCurrentTab('patient');
     }
   };
 
+  // Xử lý đăng ký tài khoản mới thành công
   const handleRegister = (newUser: User) => {
-    // We register but also automatically login as this user
+    // Tự động đăng nhập và đưa bệnh nhân vào phân hệ quản lý cá nhân
     setCurrentUser(newUser);
+    setCurrentTab('patient');
   };
 
+  // Xử lý đăng xuất hệ thống
   const handleLogout = () => {
+    // 1. Reset sạch trạng thái UI về màn hình Auth ban đầu
     setCurrentUser(null);
     setCurrentTab('auth');
+    
+    // 2. DỌN SẠCH TẤT CẢ các biến thể key token có thể tồn tại trong LocalStorage
+    const tokensToClear = [
+      'rc_access_token',
+      'rc_refresh_token',
+      'rc_is_admin',
+      'access_token',
+      'refresh_token'
+    ];
+    tokensToClear.forEach(key => localStorage.removeItem(key));
+    
+    // 3. Thông báo cho người dùng
     handleShowToast('Đã đăng xuất khỏi phiên làm việc RainClinic.', 'info');
   };
 
-  // Switch perspective between Jane Doe (Patient) and Arthur Rain (Admin) on-the-fly for review
-  const handleQuickRoleToggle = () => {
-    if (!currentUser) {
-      // If no active user, log in Jane Doe
-      setCurrentUser(DEFAULT_USERS[0]);
-      setCurrentTab('patient');
-      handleShowToast('Giả lập đăng nhập: Jane Doe (Bệnh nhân)', 'success');
-      return;
-    }
-
-    if (currentUser.role === 'patient') {
-      // Swap to default admin
-      const adminUser = DEFAULT_USERS.find((u) => u.role === 'admin') || DEFAULT_USERS[1];
-      setCurrentUser(adminUser);
-      setCurrentTab('admin');
-      handleShowToast('Giả lập chuyển góc nhìn: Arthur Rain (Admin)', 'success');
-    } else {
-      // Swap to default patient
-      const patientUser = DEFAULT_USERS.find((u) => u.role === 'patient') || DEFAULT_USERS[0];
-      setCurrentUser(patientUser);
-      setCurrentTab('patient');
-      handleShowToast('Giả lập chuyển góc nhìn: Jane Doe (Bệnh nhân)', 'success');
-    }
-  };
 
   // APPOINTMENT BOOKING HANDLER
-  const handleBookAppointment = (bookingData: {
+  const handleBookAppointment = async (bookingData: {
     serviceId: string;
     date: string;
     timeSlot: string;
     symptoms: string;
   }) => {
-    const selectedService = services.find((s) => s.id === bookingData.serviceId);
-    if (!selectedService || !currentUser) return;
+    const selectedService = services.find((s: MedicalService) => String(s.id) === String(bookingData.serviceId));
+    if (!selectedService || !currentUser) {
+      handleShowToast('Không tìm thấy dịch vụ tương ứng hoặc bạn chưa đăng nhập.', 'error');
+      return false;
+    }
 
-    const newAppointment: Appointment = {
-      id: `apt-${Date.now()}`,
-      patientId: currentUser.id,
-      patientName: currentUser.fullName,
-      patientPhone: currentUser.phone || '+84 912 345 678',
-      serviceId: selectedService.id,
-      serviceName: selectedService.name,
-      doctorName: selectedService.doctorName,
-      date: bookingData.date,
-      timeSlot: bookingData.timeSlot,
-      symptoms: bookingData.symptoms,
-      status: 'pending', // Patient-booked appointments default to pending
-      createdAt: new Date().toISOString(),
-    };
+    // Tìm khung giờ: Đảm bảo trường so sánh khớp nhau (ví dụ: cùng là slot.id hoặc slot.time)
+    const selectedTimeSlot = timeSlots.find((slot: TimeSlot) => slot.time === bookingData.timeSlot);
+    
+    const serviceId = Number(selectedService.id);
+    const timeSlotId = Number(selectedTimeSlot?.id);
 
-    setAppointments((prev) => [newAppointment, ...prev]);
-  };
+    // Kiểm tra tính hợp lệ của ID từ DB thực tế
+    if (isNaN(serviceId) || isNaN(timeSlotId)) {
+      handleShowToast('Dữ liệu dịch vụ hoặc khung giờ không hợp lệ (Lỗi ID định dạng chuỗi Mockup).', 'error');
+      return false;
+    }
 
-  // APPOINTMENT CANCELLATION HANDLER
-  const handleCancelAppointment = (id: string) => {
-    setAppointments((prev) =>
-      prev.map((apt) =>
-        apt.id === id ? { ...apt, status: 'cancelled' as const } : apt
-      )
-    );
-    handleShowToast('Yêu cầu đặt lịch hẹn đã được chuyển sang trạng thái HỦY LỊCH.', 'error');
-  };
+    try {
+      const createdAppointment = await adminCatalogService.createAppointment({
+        service: serviceId,
+        time_slot: timeSlotId,
+        appointment_date: bookingData.date,
+        symptoms: bookingData.symptoms,
+        notes: '',
+      });
 
-  // APPOINTMENT APPROVAL HANDLER
-  const handleApproveAppointment = (id: string) => {
-    setAppointments((prev) =>
-      prev.map((apt) =>
-        apt.id === id ? { ...apt, status: 'confirmed' as const } : apt
-      )
-    );
-    handleShowToast('Phê duyệt thành công! Ca hẹn kiểm tra y khoa đã khóa giờ thành công.', 'success');
-  };
-
-  // SERVICE MANAGEMENT HANDLERS
-  const handleAddService = (newService: MedicalService) => {
-    setServices((prev) => [...prev, newService]);
-  };
-
-  const handleDeleteService = (id: string) => {
-    setServices((prev) => prev.filter((s) => s.id !== id));
-    handleShowToast('Dịch vụ y tế dỡ bỏ khỏi danh sách vận hành hoạt động đầu mối.', 'error');
-  };
-
-  // TIME SLOTS SCHEDULER HANDLERS
-  const handleAddTimeSlot = (time: string) => {
-    const newSlot: TimeSlot = {
-      id: `ts-${Date.now()}`,
-      time,
-      isAvailable: true,
-    };
-    setTimeSlots((prev) => [...prev, newSlot]);
-  };
-
-  const handleDeleteTimeSlot = (id: string) => {
-    setTimeSlots((prev) => prev.filter((s) => s.id !== id));
-    handleShowToast('Đã xóa ca giờ hoạt động tương ứng khỏi bệnh viện.', 'error');
-  };
-
-  // Reset demo databases to initial factory states
-  const handleResetDatabase = () => {
-    if (window.confirm('Bạn có chắc chắn muốn đặt lại cơ sở dữ liệu mẫu về cấu hình RainClinic ban đầu?')) {
-      localStorage.removeItem('rc_services');
-      localStorage.removeItem('rc_timeslots');
-      localStorage.removeItem('rc_appointments');
-      localStorage.removeItem('rc_current_user');
-      setServices(DEFAULT_SERVICES);
-      setTimeSlots(DEFAULT_TIME_SLOTS);
-      setAppointments(DEFAULT_APPOINTMENTS);
-      setCurrentUser(DEFAULT_USERS[0]);
-      setCurrentTab('patient');
-      handleShowToast('Hệ thống dịch vụ dữ liệu RainClinic đã khôi phục mặc định!', 'info');
+      setAppointments((prev: Appointment[]) => [mapAppointmentFromApi(createdAppointment), ...prev]);
+      handleShowToast('Đặt lịch thành công. Dữ liệu đã được lưu vào MySQL.', 'success');
+      return true;
+    } catch (error) {
+      console.error('Không thể đặt lịch:', error);
+      handleShowToast('Không thể kết nối đến máy chủ đặt lịch.', 'error');
+      return false;
     }
   };
+
+  const handleCancelAppointment = async (id: string) => {
+    try {
+      await adminCatalogService.cancelAppointment(id);
+      setAppointments((prev: Appointment[]) =>
+        prev.map((apt: Appointment) =>
+          apt.id === id ? { ...apt, status: 'cancelled' as const } : apt
+        )
+      );
+      handleShowToast('Yêu cầu đặt lịch hẹn đã được chuyển sang trạng thái HỦY LỊCH.', 'success');
+    } catch (error) {
+      console.error('Không thể hủy lịch:', error);
+      handleShowToast('Không thể cập nhật trạng thái lịch hẹn trên máy chủ.', 'error');
+    }
+  };
+
+  const handleApproveAppointment = async (id: string) => {
+    try {
+      await adminCatalogService.updateAppointmentStatus(id, 'confirmed');
+      setAppointments((prev: Appointment[]) =>
+        prev.map((apt: Appointment) =>
+          apt.id === id ? { ...apt, status: 'confirmed' as const } : apt
+        )
+      );
+      handleShowToast('Phê duyệt thành công! Ca hẹn kiểm tra y khoa đã khóa giờ thành công.', 'success');
+    } catch (error) {
+      console.error('Không thể phê duyệt lịch:', error);
+      handleShowToast('Không thể phê duyệt lịch hẹn.', 'error');
+    }
+  };
+
+  const handleAddService = async (newService: MedicalService) => {
+    try {
+      const createdService = await adminCatalogService.createService({
+        name: newService.name,
+        description: newService.description,
+        category: newService.category,
+        price: newService.price,
+        doctor_name: newService.doctorName,
+        duration_minutes: newService.durationMin,
+      });
+      setServices((prev: MedicalService[]) => [mapServiceFromApi(createdService), ...prev]);
+    } catch (error) {
+      console.error('Không thể lưu dịch vụ vào backend:', error);
+      handleShowToast('Không thể lưu dịch vụ vào cơ sở dữ liệu.', 'error');
+    }
+  };
+
+  const handleDeleteService = async (id: string) => {
+    try {
+      await adminCatalogService.deleteService(id);
+      setServices((prev: MedicalService[]) => prev.filter((s: MedicalService) => s.id !== id));
+      handleShowToast('Dịch vụ y tế dỡ bỏ khỏi danh sách vận hành hoạt động đầu mối.', 'error');
+    } catch (error) {
+      console.error('Không thể xóa dịch vụ:', error);
+      handleShowToast('Không thể xóa dịch vụ khỏi cơ sở dữ liệu.', 'error');
+    }
+  };
+
+  const handleAddTimeSlot = async (time: string) => {
+    try {
+      const [startTime, endTime] = time.split('-').map((item) => item.trim());
+      const createdSlot = await adminCatalogService.createTimeSlot({
+        start_time: startTime,
+        end_time: endTime || startTime,
+        is_available: true,
+      });
+      setTimeSlots((prev: TimeSlot[]) => [mapTimeSlotFromApi(createdSlot), ...prev]);
+    } catch (error) {
+      console.error('Không thể lưu khung giờ vào backend:', error);
+      handleShowToast('Không thể lưu khung giờ vào cơ sở dữ liệu.', 'error');
+    }
+  };
+
+  const handleDeleteTimeSlot = async (id: string) => {
+    try {
+      await adminCatalogService.deleteTimeSlot(id);
+      setTimeSlots((prev: TimeSlot[]) => prev.filter((s: TimeSlot) => s.id !== id));
+      handleShowToast('Đã xóa ca giờ hoạt động tương ứng khỏi bệnh viện.', 'error');
+    } catch (error) {
+      console.error('Không thể xóa khung giờ:', error);
+      handleShowToast('Không thể xóa khung giờ khỏi cơ sở dữ liệu.', 'error');
+    }
+  };
+
+
 
   return (
     <div id="app-viewport" className="min-h-screen bg-[#f8fafc] flex flex-col justify-between font-sans">
@@ -274,7 +401,6 @@ export default function App() {
           onChangeTab={setCurrentTab}
           currentUser={currentUser}
           onLogout={handleLogout}
-          onQuickRoleToggle={handleQuickRoleToggle}
         />
   
         {/* Core App Shell */}
@@ -333,7 +459,7 @@ export default function App() {
                   <PatientPortal
                     services={services}
                     timeSlots={timeSlots}
-                    appointments={appointments}
+                    appointments={combinedAppointments}
                     currentUser={currentUser}
                     onBookAppointment={handleBookAppointment}
                     onCancelAppointment={handleCancelAppointment}
@@ -353,7 +479,7 @@ export default function App() {
                 id="view-admin"
               >
                 {/* Fallback to Admin verification warning */}
-                {(!currentUser || currentUser.role !== 'admin') && (
+                {(!currentUser || (currentUser.role !== 'admin' && currentUser.role !== 'doctor')) && (
                   <div className="bg-white rounded-xl p-12 text-center border border-slate-200 shadow-md max-w-lg mx-auto space-y-6">
                     <div className="w-16 h-16 bg-red-50 border border-red-100 rounded-full flex items-center justify-center text-red-600 mx-auto animate-pulse">
                       <ShieldAlert className="w-8 h-8" />
@@ -366,15 +492,6 @@ export default function App() {
                     </div>
                     
                     <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
-                       <button
-                        id="btn-elevate-perspective"
-                        type="button"
-                        onClick={handleQuickRoleToggle}
-                        className="px-5 py-2 hover:bg-blue-950 text-white text-xs font-bold bg-blue-900 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
-                      >
-                        <Sparkles className="w-3.5 h-3.5 text-white" />
-                        <span>Chuyển Vai Trò Giả Lập</span>
-                      </button>
                       <button
                         id="btn-goto-auth-admin"
                         type="button"
@@ -387,11 +504,12 @@ export default function App() {
                   </div>
                 )}
 
-                {currentUser && currentUser.role === 'admin' && (
+                {currentUser && (currentUser.role === 'admin' || currentUser.role === 'doctor') && (
                   <AdminDashboard
+                    currentUser={currentUser}
                     services={services}
                     timeSlots={timeSlots}
-                    appointments={appointments}
+                    appointments={combinedAppointments}
                     onApproveAppointment={handleApproveAppointment}
                     onCancelAppointment={handleCancelAppointment}
                     onAddService={handleAddService}
@@ -399,6 +517,7 @@ export default function App() {
                     onAddTimeSlot={handleAddTimeSlot}
                     onDeleteTimeSlot={handleDeleteTimeSlot}
                     onShowToast={handleShowToast}
+                    onRefreshAppointments={fetchBackendAppointments}
                   />
                 )}
               </motion.div>
@@ -419,15 +538,7 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4 text-xs">
-            <button
-              id="btn-global-db-reset"
-              type="button"
-              onClick={handleResetDatabase}
-              title="Khôi phục mặc định"
-              className="border border-slate-205 flex items-center gap-1 shadow-sm font-semibold rounded bg-slate-50 hover:bg-red-50 text-slate-600 hover:text-red-700 py-1 px-3 transition-all cursor-pointer text-[10px]"
-            >
-              Reset dữ liệu mẫu về mặc định 
-            </button>
+
             <div className="text-xs text-slate-400 font-medium flex items-center gap-1.5">
               <span>Đồng bộ LocalStorage</span>
               <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-ping"></span>
