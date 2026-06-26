@@ -23,8 +23,12 @@ from .serializers import (
     RegisterSerializer,
     ChangePasswordSerializer,
     UpdateProfileSerializer,
+    ServiceSerializer,
+    TimeSlotSerializer,
+    AppointmentSerializer,
 )
-from .permissions import IsAdminRole
+from .permissions import IsAdminRole, IsOwnerOrAdmin
+from .models import Service, TimeSlot, Appointment
 
 User = get_user_model()
 
@@ -200,3 +204,150 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     Trả về access, refresh token và is_admin.
     """
     serializer_class = CustomTokenObtainPairSerializer
+
+# ============================================================
+# CLINIC SERVICES VIEWS (MEMBER 2)
+# ============================================================
+class ServiceListView(generics.ListAPIView):
+    """GET /api/services/ - Xem danh sách dịch vụ (Công khai)"""
+    queryset = Service.objects.all()
+    serializer_class = ServiceSerializer
+    permission_classes = [AllowAny]
+
+
+class ServiceCreateView(generics.CreateAPIView):
+    """POST /api/admin/services/ - Tạo mới dịch vụ (Chỉ Admin)"""
+    queryset = Service.objects.all()
+    serializer_class = ServiceSerializer
+    permission_classes = [IsAuthenticated, IsAdminRole]
+
+
+class ServiceDeleteView(generics.DestroyAPIView):
+    """DELETE /api/admin/services/<id>/ - Xóa dịch vụ (Chỉ Admin)"""
+    queryset = Service.objects.all()
+    serializer_class = ServiceSerializer
+    permission_classes = [IsAuthenticated, IsAdminRole]
+
+
+# ============================================================
+# CLINIC TIME SLOTS VIEWS (MEMBER 2)
+# ============================================================
+class TimeSlotListView(generics.ListAPIView):
+    """GET /api/time-slots/ - Xem khung giờ (Công khai)"""
+    queryset = TimeSlot.objects.all()
+    serializer_class = TimeSlotSerializer
+    permission_classes = [AllowAny]
+
+
+class TimeSlotCreateView(generics.CreateAPIView):
+    """POST /api/admin/time-slots/ - Tạo khung giờ (Chỉ Admin)"""
+    queryset = TimeSlot.objects.all()
+    serializer_class = TimeSlotSerializer
+    permission_classes = [IsAuthenticated, IsAdminRole]
+
+
+class TimeSlotDeleteView(generics.DestroyAPIView):
+    """DELETE /api/admin/time-slots/<id>/ - Xóa khung giờ (Chỉ Admin)"""
+    queryset = TimeSlot.objects.all()
+    serializer_class = TimeSlotSerializer
+    permission_classes = [IsAuthenticated, IsAdminRole]
+
+
+# ============================================================
+# APPOINTMENT VIEWS (MEMBER 3 - BOOK & CANCEL)
+# ============================================================
+class BookAppointmentView(generics.CreateAPIView):
+    """
+    POST /api/appointments/book/
+    
+    Đặt lịch hẹn mới. Yêu cầu đăng nhập.
+    Tự động gán patient là user đang đăng nhập.
+    """
+    queryset = Appointment.objects.all()
+    serializer_class = AppointmentSerializer
+    permission_classes = [IsAuthenticated]
+
+    def perform_create(self, serializer):
+        serializer.save(patient=self.request.user)
+
+
+class CancelAppointmentView(generics.UpdateAPIView):
+    """
+    PUT /api/appointments/<id>/cancel/
+    
+    Khách hàng chủ động hủy lịch. Yêu cầu đăng nhập & quyền sở hữu/admin.
+    """
+    queryset = Appointment.objects.all()
+    serializer_class = AppointmentSerializer
+    permission_classes = [IsAuthenticated, IsOwnerOrAdmin]
+
+    def update(self, request, *args, **kwargs):
+        appointment = self.get_object()
+        
+        # Patients can only cancel if appointment is pending
+        if appointment.status != 'pending' and request.user.role != 'admin':
+            return Response(
+                {'error': 'Chỉ có thể hủy lịch hẹn ở trạng thái đang chờ duyệt.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        appointment.status = 'cancelled'
+        appointment.save()
+        serializer = self.get_serializer(appointment)
+        return Response(serializer.data)
+
+
+class PatientAppointmentListView(generics.ListAPIView):
+    """
+    GET /api/appointments/
+    
+    Lấy danh sách lịch hẹn của bệnh nhân hiện tại.
+    """
+    serializer_class = AppointmentSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        if self.request.user.role == 'admin':
+            return Appointment.objects.all()
+        return Appointment.objects.filter(patient=self.request.user)
+
+
+# ============================================================
+# APPOINTMENT ADMIN VIEWS (MEMBER 4 - LIST & CONFIRM)
+# ============================================================
+class AdminAppointmentListView(generics.ListAPIView):
+    """
+    GET /api/admin/appointments/
+    
+    Danh sách toàn bộ lịch hẹn kèm bộ lọc theo ngày và trạng thái.
+    """
+    serializer_class = AppointmentSerializer
+    permission_classes = [IsAuthenticated, IsAdminRole]
+
+    def get_queryset(self):
+        queryset = Appointment.objects.all()
+        date = self.request.query_params.get('date')
+        status_param = self.request.query_params.get('status')
+        if date:
+            queryset = queryset.filter(date=date)
+        if status_param:
+            queryset = queryset.filter(status=status_param)
+        return queryset
+
+
+class ConfirmAppointmentView(generics.UpdateAPIView):
+    """
+    PUT /api/admin/appointments/<id>/confirm/
+    
+    Phê duyệt/Xác nhận lịch hẹn.
+    """
+    queryset = Appointment.objects.all()
+    serializer_class = AppointmentSerializer
+    permission_classes = [IsAuthenticated, IsAdminRole]
+
+    def update(self, request, *args, **kwargs):
+        appointment = self.get_object()
+        appointment.status = 'confirmed'
+        appointment.save()
+        serializer = self.get_serializer(appointment)
+        return Response(serializer.data)

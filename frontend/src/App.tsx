@@ -84,6 +84,103 @@ export default function App() {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   // ----------------------------------------------------
+  // API UTILITY & SYNC EFFECT HOOKS
+  // ----------------------------------------------------
+  const API_BASE = 'http://localhost:8000/api';
+
+  const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
+    const token = localStorage.getItem('rc_access_token');
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      ...options.headers,
+    };
+
+    const response = await fetch(`${API_BASE}${endpoint}`, {
+      ...options,
+      headers,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || errorData.detail || 'Có lỗi xảy ra');
+    }
+
+    return response.json();
+  };
+
+  // Fetch Services & Time Slots on mount
+  useEffect(() => {
+    const loadInitialData = async () => {
+      try {
+        const servicesData = await apiRequest('/services/');
+        if (Array.isArray(servicesData)) {
+          setServices(servicesData.map((s: any) => ({
+            id: s.id.toString(),
+            name: s.name,
+            category: s.category,
+            durationMin: s.duration_min,
+            price: s.price,
+            doctorName: s.doctor_name,
+            description: s.description,
+          })));
+        }
+      } catch (err) {
+        console.warn('Backend services not accessible, using mock data.', err);
+      }
+
+      try {
+        const slotsData = await apiRequest('/time-slots/');
+        if (Array.isArray(slotsData)) {
+          setTimeSlots(slotsData.map((slot: any) => ({
+            id: slot.id.toString(),
+            time: slot.time,
+            isAvailable: slot.is_available,
+          })));
+        }
+      } catch (err) {
+        console.warn('Backend time slots not accessible, using mock data.', err);
+      }
+    };
+
+    loadInitialData();
+  }, []);
+
+  // Fetch Appointments when user logs in
+  useEffect(() => {
+    if (!currentUser) {
+      setAppointments([]);
+      return;
+    }
+
+    const loadAppointments = async () => {
+      try {
+        const aptsData = await apiRequest('/appointments/');
+        if (Array.isArray(aptsData)) {
+          setAppointments(aptsData.map((apt: any) => ({
+            id: apt.id.toString(),
+            patientId: apt.patientId,
+            patientName: apt.patientName,
+            patientPhone: apt.patientPhone,
+            serviceId: apt.serviceId,
+            serviceName: apt.serviceName,
+            doctorName: apt.doctorName,
+            date: apt.date,
+            timeSlot: apt.timeSlot,
+            symptoms: apt.symptoms,
+            status: apt.status,
+            createdAt: apt.createdAt,
+          })));
+        }
+      } catch (err) {
+        console.warn('Backend appointments not accessible.', err);
+      }
+    };
+
+    loadAppointments();
+  }, [currentUser]);
+
+  // ----------------------------------------------------
   // WRITE STORAGE UPDATES TO LOCAL STORAGE
   // ----------------------------------------------------
   useEffect(() => {
@@ -154,7 +251,7 @@ export default function App() {
 
 
   // APPOINTMENT BOOKING HANDLER
-  const handleBookAppointment = (bookingData: {
+  const handleBookAppointment = async (bookingData: {
     serviceId: string;
     date: string;
     timeSlot: string;
@@ -163,42 +260,112 @@ export default function App() {
     const selectedService = services.find((s) => s.id === bookingData.serviceId);
     if (!selectedService || !currentUser) return;
 
-    const newAppointment: Appointment = {
-      id: `apt-${Date.now()}`,
-      patientId: currentUser.id,
-      patientName: currentUser.fullName,
-      patientPhone: currentUser.phone || '+84 912 345 678',
-      serviceId: selectedService.id,
-      serviceName: selectedService.name,
-      doctorName: selectedService.doctorName,
-      date: bookingData.date,
-      timeSlot: bookingData.timeSlot,
-      symptoms: bookingData.symptoms,
-      status: 'pending', // Patient-booked appointments default to pending
-      createdAt: new Date().toISOString(),
-    };
+    // Find the slot id by time string
+    const selectedSlotObj = timeSlots.find((t) => t.time === bookingData.timeSlot);
+    if (!selectedSlotObj) {
+      handleShowToast('Không tìm thấy khung giờ phù hợp.', 'error');
+      return;
+    }
 
-    setAppointments((prev) => [newAppointment, ...prev]);
+    const rawServiceId = selectedService.id.startsWith('srv-')
+      ? selectedService.id.replace('srv-', '')
+      : selectedService.id;
+
+    const rawSlotId = selectedSlotObj.id.startsWith('ts-')
+      ? selectedSlotObj.id.replace('ts-', '')
+      : selectedSlotObj.id;
+
+    try {
+      const payload = {
+        service_id: parseInt(rawServiceId),
+        slot_id: parseInt(rawSlotId),
+        date: bookingData.date,
+        symptoms: bookingData.symptoms,
+      };
+
+      const newAptData = await apiRequest('/appointments/book/', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      const newAppointment: Appointment = {
+        id: newAptData.id.toString(),
+        patientId: newAptData.patientId,
+        patientName: newAptData.patientName,
+        patientPhone: newAptData.patientPhone,
+        serviceId: newAptData.serviceId,
+        serviceName: newAptData.serviceName,
+        doctorName: newAptData.doctorName,
+        date: newAptData.date,
+        timeSlot: newAptData.timeSlot,
+        symptoms: newAptData.symptoms,
+        status: newAptData.status,
+        createdAt: newAptData.createdAt,
+      };
+
+      setAppointments((prev) => [newAppointment, ...prev]);
+      handleShowToast('Yêu cầu đặt lịch của bạn đã được tiếp nhận! Đang chờ quản trị viên duyệt.', 'success');
+    } catch (err: any) {
+      handleShowToast(err.message || 'Lỗi khi đặt lịch hẹn khám.', 'error');
+    }
   };
 
   // APPOINTMENT CANCELLATION HANDLER
-  const handleCancelAppointment = (id: string) => {
-    setAppointments((prev) =>
-      prev.map((apt) =>
-        apt.id === id ? { ...apt, status: 'cancelled' as const } : apt
-      )
-    );
-    handleShowToast('Yêu cầu đặt lịch hẹn đã được chuyển sang trạng thái HỦY LỊCH.', 'error');
+  const handleCancelAppointment = async (id: string) => {
+    // Handle mock appointments locally
+    if (id.startsWith('apt-')) {
+      setAppointments((prev) =>
+        prev.map((apt) =>
+          apt.id === id ? { ...apt, status: 'cancelled' as const } : apt
+        )
+      );
+      handleShowToast('Yêu cầu đặt lịch hẹn đã được chuyển sang trạng thái HỦY LỊCH (Dữ liệu mẫu).', 'error');
+      return;
+    }
+
+    try {
+      await apiRequest(`/appointments/${id}/cancel/`, {
+        method: 'PUT',
+      });
+
+      setAppointments((prev) =>
+        prev.map((apt) =>
+          apt.id === id ? { ...apt, status: 'cancelled' as const } : apt
+        )
+      );
+      handleShowToast('Yêu cầu đặt lịch hẹn đã được chuyển sang trạng thái HỦY LỊCH.', 'error');
+    } catch (err: any) {
+      handleShowToast(err.message || 'Không thể hủy lịch hẹn.', 'error');
+    }
   };
 
   // APPOINTMENT APPROVAL HANDLER
-  const handleApproveAppointment = (id: string) => {
-    setAppointments((prev) =>
-      prev.map((apt) =>
-        apt.id === id ? { ...apt, status: 'confirmed' as const } : apt
-      )
-    );
-    handleShowToast('Phê duyệt thành công! Ca hẹn kiểm tra y khoa đã khóa giờ thành công.', 'success');
+  const handleApproveAppointment = async (id: string) => {
+    // Handle mock appointments locally
+    if (id.startsWith('apt-')) {
+      setAppointments((prev) =>
+        prev.map((apt) =>
+          apt.id === id ? { ...apt, status: 'confirmed' as const } : apt
+        )
+      );
+      handleShowToast('Phê duyệt thành công! Ca hẹn kiểm tra y khoa đã khóa giờ thành công (Dữ liệu mẫu).', 'success');
+      return;
+    }
+
+    try {
+      await apiRequest(`/admin/appointments/${id}/confirm/`, {
+        method: 'PUT',
+      });
+
+      setAppointments((prev) =>
+        prev.map((apt) =>
+          apt.id === id ? { ...apt, status: 'confirmed' as const } : apt
+        )
+      );
+      handleShowToast('Phê duyệt thành công! Ca hẹn kiểm tra y khoa đã khóa giờ thành công.', 'success');
+    } catch (err: any) {
+      handleShowToast(err.message || 'Không thể phê duyệt lịch hẹn.', 'error');
+    }
   };
 
   // SERVICE MANAGEMENT HANDLERS
