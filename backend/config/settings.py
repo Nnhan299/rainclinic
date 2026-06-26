@@ -43,7 +43,9 @@ INSTALLED_APPS = [
 
     # Local apps
     'authentication',
+    'clinic',
     'clinic_catalog',
+    'appointments',
 ]
 
 MIDDLEWARE = [

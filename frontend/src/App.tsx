@@ -47,6 +47,53 @@ export default function App() {
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>(DEFAULT_TIME_SLOTS);
   const [appointments, setAppointments] = useState<Appointment[]>(DEFAULT_APPOINTMENTS);
 
+  const [backendAppointments, setBackendAppointments] = useState<Appointment[]>([]);
+
+  const fetchBackendAppointments = async () => {
+    try {
+      const response = await fetch('http://127.0.0.1:5000/api/admin/appointments/', {
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (!response.ok) throw new Error('Lỗi mạng');
+      const data = await response.json();
+      
+      const results = data.results || data;
+      if (Array.isArray(results)) {
+        const mapped = results.map((apt: any) => ({
+          id: String(apt.id),
+          patientId: apt.patient_info?.username || 'usr-1',
+          patientName: apt.patient_info?.full_name || 'Bệnh nhân',
+          patientPhone: apt.patient_info?.phone || '',
+          serviceId: 'srv-1',
+          serviceName: apt.service_name || 'Khám sức khỏe',
+          doctorName: 'BS. Evelyn Reed',
+          date: apt.date,
+          timeSlot: apt.time_slot_text || '08:00 - 09:00',
+          symptoms: apt.symptoms || '',
+          status: apt.status as 'pending' | 'confirmed' | 'cancelled',
+          createdAt: apt.created_at || new Date().toISOString()
+        }));
+        setBackendAppointments(mapped);
+      }
+    } catch (error) {
+      console.error("Lỗi lấy dữ liệu API từ Backend:", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchBackendAppointments();
+  }, []);
+
+  const combinedAppointments = React.useMemo(() => {
+    const merged = [...appointments];
+    backendAppointments.forEach((bApt) => {
+      if (!merged.some((a) => String(a.id) === String(bApt.id))) {
+        merged.push(bApt);
+      }
+    });
+    return merged;
+  }, [appointments, backendAppointments]);
+
   const [currentTab, setCurrentTab] = useState<'auth' | 'patient' | 'admin'>(() => {
     const savedUser = localStorage.getItem('rc_current_user');
     if (savedUser) {
@@ -412,7 +459,7 @@ export default function App() {
                   <PatientPortal
                     services={services}
                     timeSlots={timeSlots}
-                    appointments={appointments}
+                    appointments={combinedAppointments}
                     currentUser={currentUser}
                     onBookAppointment={handleBookAppointment}
                     onCancelAppointment={handleCancelAppointment}
@@ -461,7 +508,7 @@ export default function App() {
                   <AdminDashboard
                     services={services}
                     timeSlots={timeSlots}
-                    appointments={appointments}
+                    appointments={combinedAppointments}
                     onApproveAppointment={handleApproveAppointment}
                     onCancelAppointment={handleCancelAppointment}
                     onAddService={handleAddService}
@@ -469,6 +516,7 @@ export default function App() {
                     onAddTimeSlot={handleAddTimeSlot}
                     onDeleteTimeSlot={handleDeleteTimeSlot}
                     onShowToast={handleShowToast}
+                    onRefreshAppointments={fetchBackendAppointments}
                   />
                 )}
               </motion.div>

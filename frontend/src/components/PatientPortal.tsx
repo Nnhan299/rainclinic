@@ -45,7 +45,7 @@ export default function PatientPortal({
 
   // Personal appointments list
   const personalAppointments = appointments.filter(
-    (apt) => apt.patientId === currentUser.id
+    (apt) => apt.patientId === currentUser.id || apt.patientId === currentUser.username
   );
 
   // Derive selected service parameters
